@@ -7,7 +7,7 @@ services:
     working_dir: /app
     volumes:
       - ./:/app
-      - go-mod-cache:/go/pkg/mod
+      - go_mod_cache:/go/pkg/mod
     env_file:
       - .env
     networks:
@@ -19,4 +19,4 @@ networks:
     driver: bridge
 
 volumes:
-  go-mod-cache:
+  go_mod_cache:

@@ -27,7 +27,7 @@ docker compose up --build
 
 - `APP_NAME` из `.env` интерполируется в `container_name: ${APP_NAME}_app`. Без `.env` контейнер будет называться `_app` (невалидно) — поэтому `cp .env.example .env` обязателен перед первым `up`.
 - Сеть `app` в compose — **не project-scoped** (`name: app`, `driver: bridge`). Если на хосте уже есть такая сеть — стеки её разделят. Если это нежелательно — перейти на project-scoped имя.
-- Volume `go-mod-cache` переживает перезапуски контейнера — кэш `go mod download` не теряется.
+- Volume `go_mod_cache` переживает перезапуски контейнера — кэш `go mod download` не теряется.
 - `.air.toml` собирает бинарник в `./tmp/main` из `./cmd/bot`. Каталог `tmp/` в `.gitignore` и `.dockerignore`.
 - `.env.example` — шаблон. При добавлении новых переменных окружения держать его в синхроне с реальным `.env` и с `SPEC.md` (таблица переменных).
 - MCP-серверы: `.claude/settings.local.json` включает `context7`, `playwright`, `stitch`. Для Go-библиотек и library-docs — `context7`.
