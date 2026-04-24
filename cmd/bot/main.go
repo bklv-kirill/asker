@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/bklv-kirill/asker/internal/config"
+	usersRepo "github.com/bklv-kirill/asker/internal/repository/users"
 	"github.com/bklv-kirill/asker/internal/storage/sqlite"
 	"github.com/bklv-kirill/asker/internal/telegram"
 )
@@ -30,7 +31,9 @@ func main() {
 		}
 	}()
 
-	tg := telegram.NewTelegramBot(cfg.TokenBotToken, cfg.BotName, logger)
+	users := usersRepo.NewUsersSQLiteRepo(db)
+
+	tg := telegram.NewTelegramBot(cfg.TokenBotToken, cfg.BotName, logger, users)
 	if err := tg.Start(ctx); err != nil {
 		logger.Error("telegram start", "err", err)
 		os.Exit(1)
