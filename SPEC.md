@@ -54,8 +54,9 @@ asker/
     ├── config/
     │   └── config.go    — структура Config и функция Load() (viper: .env + env vars, panic при ошибке или пустом required-поле)
     ├── repository/
-    │   └── users/
-    │       └── users.go   — интерфейс Repository и реализация (NewRepository(db) Repository) с методом Create(ctx, name) (id, error)
+    │   └── users/              — пакет usersRepo
+    │       ├── users.go        — интерфейс Repository + ErrCreate (контракт доступа к таблице users)
+    │       └── sqlite.go       — реализация поверх SQLite: usersSQLiteRepo + NewUsersSQLiteRepo(db) Repository
     ├── storage/
     │   └── sqlite/
     │       └── sqlite.go  — New(cfg, logger) *sql.DB: открывает SQLite-файл, делает ping, возвращает соединение; panic при любой ошибке
@@ -121,4 +122,4 @@ docker compose up --build
 - **2026-04-24** — прокинут HTTP(S)-прокси в контейнер: `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` добавлены в `.env.example`, `.env` и `environment:` compose. Без прокси `bot.New` падал на `getMe: context deadline exceeded` из-за блокировки `api.telegram.org` на российском хосте. Go-шный `http.DefaultTransport` подхватывает эти env автоматически — код не менялся.
 - **2026-04-25** — Фаза 3 (база): добавлен пакет `internal/storage/sqlite` с `New(cfg, logger) *sql.DB` (драйвер `github.com/mattn/go-sqlite3`, голый `database/sql`). Контракт — panic при любой ошибке open/ping (консистентно с `config.Load`); при неудаче ping соединение закрывается перед panic. В Dockerfile добавлен `build-base` для cgo, в compose — bind-mount `./data:/data`, в `config.Config` — обязательное поле `DBPath` (env `DB_PATH`). `main.go` открывает БД при старте, `defer db.Close()`. Репозитории под модели будут отдельно и принимать `*sql.DB` в конструкторах.
 - **2026-04-25** — Фаза 3 (миграции + refresh): добавлены миграции `migrations/0001_users` и `migrations/0002_telegram_users` в формате раздельных `.up.sql` / `.down.sql`. Схема зафиксирована: `users(id, name, gender, age, info, created_at, updated_at)` + триггер на `updated_at`; `telegram_users(id, user_id UNIQUE, telegram_user_id UNIQUE, created_at, updated_at, FK users ON DELETE CASCADE)` + триггер. `gender` = TEXT CHECK enum (`'мужчина'`/`'женщина'`), `age` CHECK 1..120. Добавлен `scripts/refresh_db.sh` — останавливает контейнер, прогоняет все down в обратном порядке, up в прямом, стартует контейнер. Down-миграции идемпотентны (`DROP ... IF EXISTS`), sqlite3-клиент ожидается на хосте. Runner внутри приложения (авто-apply при старте) ещё не подключён.
-- **2026-04-25** — Фаза 3 (репозиторий users): добавлен `internal/repository/users` — интерфейс `Repository` с методом `Create(ctx, name) (int64, error)` и приватной реализацией поверх `*sql.DB`. Конструктор `NewRepository(db *sql.DB) Repository`; соединение не закрывается репозиторием (жизненный цикл — в `main`). Ошибки через sentinel `ErrCreate` + `errors.Join`. Пакет существует, но пока нигде не импортируется — подключим в хендлеры по мере необходимости.
+- **2026-04-25** — Фаза 3 (репозиторий users): добавлен `internal/repository/users` (пакет `usersRepo`) — `users.go` хранит контракт (интерфейс `Repository` с методом `Create(ctx, name) (int64, error)` + sentinel `ErrCreate`), `sqlite.go` — реализацию поверх `*sql.DB` (приватная `usersSQLiteRepo`, конструктор `NewUsersSQLiteRepo(db) Repository`). Соединение не закрывается репозиторием (жизненный цикл — в `main`). Ошибки через `errors.Join(ErrCreate, cause)`. Пакет существует, но пока нигде не импортируется — подключим в хендлеры по мере необходимости.
