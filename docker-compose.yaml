@@ -8,8 +8,10 @@ services:
     volumes:
       - ./:/app
       - go_mod_cache:/go/pkg/mod
-    env_file:
-      - .env
+    environment:
+      APP_NAME: ${APP_NAME}
+      BOT_NAME: ${BOT_NAME}
+      TOKEN_BOT_TOKEN: ${TOKEN_BOT_TOKEN}
     networks:
       - app
 
