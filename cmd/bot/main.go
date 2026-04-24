@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"time"
 
 	"github.com/bklv-kirill/asker/internal/config"
@@ -10,12 +10,12 @@ import (
 func main() {
 	cfg := config.Load()
 
-	fmt.Printf("starting %s (%s)\n", cfg.AppName, cfg.BotName)
+	log.Printf("starting %s (%s)", cfg.AppName, cfg.BotName)
 
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		fmt.Println("working...")
+		log.Println("working...")
 	}
 }
