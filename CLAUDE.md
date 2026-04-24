@@ -70,6 +70,21 @@ docker compose up --build
 - `[DELETE]:unused-legacy-parser`
 - `[MODIFY]:extend-compose-with-redis`
 
+## Ошибки — только через переменные, без `fmt.Errorf` в `return`
+
+**Правило проекта (обязательное).** Все ошибки, которые **возвращаются** из функций/методов, объявляются как переменные на уровне пакета (обычно `var ErrFoo = errors.New("...")` или `var errFoo = errors.New("...")`), и возвращаются эти переменные (или результат `errors.Join(sentinel, underlying)` для сохранения причины). **`fmt.Errorf` в `return` не использовать.**
+
+Зачем:
+- Возвращаемые ошибки становятся частью контракта пакета — сравниваются через `errors.Is`, не через подстроку.
+- Единый набор sentinel-значений в одном месте проще находить и переиспользовать.
+- Сообщение об ошибке не разбросано по сайтам вызова.
+
+Как применять:
+- Оборачивание причины — через `errors.Join(sentinel, cause)`, а не `fmt.Errorf("%w: %w", ...)`.
+- Экспортируемость (`Err*` vs `err*`) — по обычным правилам Go: если ошибка должна быть видна потребителям пакета для `errors.Is`, экспортируем, иначе — нет.
+- `panic(fmt.Errorf(...))` правило **не затрагивает**: panic — это не `return`, там допускается `fmt.Errorf` для быстрого сообщения (как в `internal/config`).
+- Логирование через `log.Printf("...: %v", err)` правило тоже не затрагивает — это форматирование для вывода, а не возврат.
+
 ## Host context
 
 This repo lives on the shared production server (see `/root/CLAUDE.md`). Nothing here is deployed yet — there is no systemd unit, no nginx vhost, no domain. When deployment time comes, follow `/root/.claude/rules/deploy-checklist.md`.
