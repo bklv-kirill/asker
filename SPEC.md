@@ -50,7 +50,7 @@ asker/
     │   └── config.go    — структура Config и функция Load() (viper: .env + env vars, panic при ошибке или пустом required-поле)
     ├── storage/
     │   └── sqlite/
-    │       └── sqlite.go  — New(cfg, logger) (*sql.DB, error): открывает SQLite-файл, делает ping, возвращает соединение
+    │       └── sqlite.go  — New(cfg, logger) *sql.DB: открывает SQLite-файл, делает ping, возвращает соединение; panic при любой ошибке
     └── telegram/
         ├── telegram.go        — структура TelegramBot (NewTelegramBot(token, botName, logger) + Start), регистрация обработчиков
         ├── handler_start.go   — обработчик /start (приватный метод *TelegramBot)
@@ -97,7 +97,7 @@ docker compose up --build
 - [x] **Фаза 0 — Скаффолд инфраструктуры.** docker-compose + Dockerfile + air + базовый Go-луп `working...`.
 - [x] **Фаза 1 — Подключение к Telegram (БАЗА).** Клиент `github.com/go-telegram/bot` в long-polling, структура `TelegramBot` с `NewTelegramBot(token, botName)` и `Start(ctx)`, обработка `/start` с персонализированным приветствием, graceful shutdown по SIGINT/SIGTERM. Расширение набора команд — в следующих фазах.
 - [ ] **Фаза 2 — Функционал бота «Герман».** Определяется отдельно.
-- [~] **Фаза 3 — Хранилище.** SQLite подключён: пакет `internal/storage/sqlite` с `New(cfg, logger) (*sql.DB, error)` (open + ping, sentinel-ошибки `ErrOpen`/`ErrPing`), файл лежит в bind-mount `./data/asker.db`. Схема таблиц и конкретные репозитории (под модели) — следующим шагом.
+- [~] **Фаза 3 — Хранилище.** SQLite подключён: пакет `internal/storage/sqlite` с `New(cfg, logger) *sql.DB` (open + ping, panic при ошибке — консистентно с `config.Load`), файл лежит в bind-mount `./data/asker.db`. Схема таблиц и конкретные репозитории (под модели) — следующим шагом.
 - [ ] **Фаза 4 — Prod-деплой.** Multi-stage Dockerfile, systemd / compose-стек на сервере, nginx (если нужен webhook).
 
 ## Changelog
@@ -111,4 +111,4 @@ docker compose up --build
 - **2026-04-24** — принята конвенция «один хендлер — один файл»: `handleStart` вынесен из `telegram.go` в `handler_start.go`; в `telegram.go` остались только `TelegramBot`, `NewTelegramBot`, `Start` и регистрация хендлеров.
 - **2026-04-24** — добавлен echo-хендлер (`handler_echo.go`): подключён в `Start` через `bot.WithDefaultHandler`, повторяет любое текстовое сообщение, которое не поймали зарегистрированные команды, логирует `incoming message` и `outgoing reply` через slog.
 - **2026-04-24** — прокинут HTTP(S)-прокси в контейнер: `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` добавлены в `.env.example`, `.env` и `environment:` compose. Без прокси `bot.New` падал на `getMe: context deadline exceeded` из-за блокировки `api.telegram.org` на российском хосте. Go-шный `http.DefaultTransport` подхватывает эти env автоматически — код не менялся.
-- **2026-04-25** — Фаза 3 (база): добавлен пакет `internal/storage/sqlite` с `New(cfg, logger) (*sql.DB, error)` (драйвер `github.com/mattn/go-sqlite3`, голый `database/sql`). В Dockerfile добавлен `build-base` для cgo, в compose — bind-mount `./data:/data`, в `config.Config` — обязательное поле `DBPath` (env `DB_PATH`). `main.go` открывает БД при старте, `defer db.Close()`. Репозитории под модели будут отдельно и принимать `*sql.DB` в конструкторах.
+- **2026-04-25** — Фаза 3 (база): добавлен пакет `internal/storage/sqlite` с `New(cfg, logger) *sql.DB` (драйвер `github.com/mattn/go-sqlite3`, голый `database/sql`). Контракт — panic при любой ошибке open/ping (консистентно с `config.Load`); при неудаче ping соединение закрывается перед panic. В Dockerfile добавлен `build-base` для cgo, в compose — bind-mount `./data:/data`, в `config.Config` — обязательное поле `DBPath` (env `DB_PATH`). `main.go` открывает БД при старте, `defer db.Close()`. Репозитории под модели будут отдельно и принимать `*sql.DB` в конструкторах.
