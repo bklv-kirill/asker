@@ -13,13 +13,34 @@ func (t *TelegramBot) handleStart(ctx context.Context, b *bot.Bot, update *model
 		return
 	}
 
-	t.CreateNewTelegramUserIfNotExists(ctx, update.Message.From)
+	var from *models.User = update.Message.From
+	var chatID int64 = update.Message.Chat.ID
 
-	var text string = fmt.Sprintf("Привет, %s! Я %s.", update.Message.From.FirstName, t.botName)
+	// Если пользователь уже есть — здороваемся и выходим. Ошибку exists-check
+	// не считаем фатальной: в худшем случае пойдём по new-user ветке и
+	// CreateNewTelegramUserIfNotExists внутри повторит проверку.
+	exists, err := t.telegramUsers.ExistsByTelegramUserID(ctx, from.ID)
+	if err != nil {
+		t.logger.Error("telegram_users exists check", "err", err, "telegram_user_id", from.ID)
+	} else if exists {
+		var text string = fmt.Sprintf("Рад тебя снова видеть, %s!", from.FirstName)
+		if _, err := b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: chatID,
+			Text:   text,
+		}); err != nil {
+			t.logger.Error("send /start welcome-back reply", "err", err, "chat_id", chatID)
+		}
+
+		return
+	}
+
+	t.CreateNewTelegramUserIfNotExists(ctx, from)
+
+	var text string = fmt.Sprintf("Привет, %s! Я %s.", from.FirstName, t.botName)
 	if _, err := b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: update.Message.Chat.ID,
+		ChatID: chatID,
 		Text:   text,
 	}); err != nil {
-		t.logger.Error("send /start reply", "err", err, "chat_id", update.Message.Chat.ID)
+		t.logger.Error("send /start reply", "err", err, "chat_id", chatID)
 	}
 }
