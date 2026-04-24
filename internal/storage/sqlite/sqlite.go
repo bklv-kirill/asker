@@ -23,7 +23,8 @@ func New(cfg *config.Config, logger *slog.Logger) *sql.DB {
 		panic(fmt.Errorf("sqlite: open %s: %w", cfg.DBPath, err))
 	}
 
-	if err := db.Ping(); err != nil {
+	err = db.Ping()
+	if err != nil {
 		_ = db.Close()
 		panic(fmt.Errorf("sqlite: ping %s: %w", cfg.DBPath, err))
 	}

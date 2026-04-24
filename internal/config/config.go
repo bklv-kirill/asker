@@ -20,25 +20,28 @@ type Config struct {
 // Переменные окружения имеют приоритет над значениями из .env.
 // При любой ошибке загрузки — panic: дальнейшее выполнение без конфига не имеет смысла.
 func Load() *Config {
-	v := viper.New()
+	var v *viper.Viper = viper.New()
 	v.SetConfigFile(".env")
 	v.SetConfigType("env")
 	v.AutomaticEnv()
 
-	if err := v.ReadInConfig(); err != nil && !errors.Is(err, os.ErrNotExist) {
+	var err error = v.ReadInConfig()
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		panic(fmt.Errorf("config: read .env: %w", err))
 	}
 
 	// BindEnv нужен, чтобы Unmarshal подхватывал переменные окружения,
 	// которых нет в .env — без него AutomaticEnv срабатывает только для Get*.
 	for _, key := range []string{"APP_NAME", "BOT_NAME", "TOKEN_BOT_TOKEN", "DB_PATH"} {
-		if err := v.BindEnv(key); err != nil {
+		err = v.BindEnv(key)
+		if err != nil {
 			panic(fmt.Errorf("config: bind env %s: %w", key, err))
 		}
 	}
 
 	var cfg Config
-	if err := v.Unmarshal(&cfg); err != nil {
+	err = v.Unmarshal(&cfg)
+	if err != nil {
 		panic(fmt.Errorf("config: unmarshal: %w", err))
 	}
 

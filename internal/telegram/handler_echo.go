@@ -15,8 +15,8 @@ func (t *TelegramBot) handleEcho(ctx context.Context, b *bot.Bot, update *models
 		return
 	}
 
-	chatID := update.Message.Chat.ID
-	text := update.Message.Text
+	var chatID int64 = update.Message.Chat.ID
+	var text string = update.Message.Text
 
 	t.logger.Info("incoming message",
 		"chat_id", chatID,
