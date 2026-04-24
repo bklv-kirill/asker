@@ -13,6 +13,7 @@ type Config struct {
 	AppName       string `mapstructure:"APP_NAME"`
 	BotName       string `mapstructure:"BOT_NAME"`
 	TokenBotToken string `mapstructure:"TOKEN_BOT_TOKEN"`
+	DBPath        string `mapstructure:"DB_PATH"`
 }
 
 // Load читает .env (если существует) и переменные окружения, собирает Config.
@@ -30,7 +31,7 @@ func Load() *Config {
 
 	// BindEnv нужен, чтобы Unmarshal подхватывал переменные окружения,
 	// которых нет в .env — без него AutomaticEnv срабатывает только для Get*.
-	for _, key := range []string{"APP_NAME", "BOT_NAME", "TOKEN_BOT_TOKEN"} {
+	for _, key := range []string{"APP_NAME", "BOT_NAME", "TOKEN_BOT_TOKEN", "DB_PATH"} {
 		if err := v.BindEnv(key); err != nil {
 			panic(fmt.Errorf("config: bind env %s: %w", key, err))
 		}
@@ -44,6 +45,7 @@ func Load() *Config {
 	requireNonEmpty("APP_NAME", cfg.AppName)
 	requireNonEmpty("BOT_NAME", cfg.BotName)
 	requireNonEmpty("TOKEN_BOT_TOKEN", cfg.TokenBotToken)
+	requireNonEmpty("DB_PATH", cfg.DBPath)
 
 	return &cfg
 }
