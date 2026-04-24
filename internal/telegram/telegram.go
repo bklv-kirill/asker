@@ -72,18 +72,27 @@ func (t *TelegramBot) CreateNewTelegramUserIfNotExists(ctx context.Context, from
 		t.logger.Error("telegram_users exists check", "err", err, "telegram_user_id", from.ID)
 
 		return
-	}
-	if exists {
+	} else if exists {
 		return
 	}
 
 	var lastName *string = optionalString(from.LastName)
 	var username *string = optionalString(from.Username)
 
-	_, err = t.telegramUsers.Create(ctx, from.ID, from.FirstName, lastName, username)
+	id, err := t.telegramUsers.Create(ctx, from.ID, from.FirstName, lastName, username)
 	if err != nil {
 		t.logger.Error("telegram_users create", "err", err, "telegram_user_id", from.ID)
+
+		return
 	}
+
+	t.logger.Info("telegram_users created",
+		"id", id,
+		"telegram_user_id", from.ID,
+		"first_name", from.FirstName,
+		"last_name", from.LastName,
+		"username", from.Username,
+	)
 }
 
 // optionalString отличает «TG не прислал поле» от «прислал, но пусто»: в
