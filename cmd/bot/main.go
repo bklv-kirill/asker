@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/bklv-kirill/asker/internal/config"
+	"github.com/bklv-kirill/asker/internal/storage/sqlite"
 	"github.com/bklv-kirill/asker/internal/telegram"
 )
 
@@ -21,6 +22,17 @@ func main() {
 	defer cancel()
 
 	logger.Info("starting", "app", cfg.AppName, "bot", cfg.BotName)
+
+	db, err := sqlite.New(cfg, logger)
+	if err != nil {
+		logger.Error("sqlite open", "err", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			logger.Error("sqlite close", "err", err)
+		}
+	}()
 
 	tg := telegram.NewTelegramBot(cfg.TokenBotToken, cfg.BotName, logger)
 	if err := tg.Start(ctx); err != nil {
