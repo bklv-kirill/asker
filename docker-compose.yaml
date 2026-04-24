@@ -7,11 +7,13 @@ services:
     working_dir: /app
     volumes:
       - ./:/app
+      - ./data:/data
       - go_mod_cache:/go/pkg/mod
     environment:
       APP_NAME: ${APP_NAME}
       BOT_NAME: ${BOT_NAME}
       TOKEN_BOT_TOKEN: ${TOKEN_BOT_TOKEN}
+      DB_PATH: ${DB_PATH}
       HTTP_PROXY: ${HTTP_PROXY}
       HTTPS_PROXY: ${HTTPS_PROXY}
       NO_PROXY: ${NO_PROXY}
