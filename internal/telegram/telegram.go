@@ -30,7 +30,7 @@ func NewTelegramBot(token, botName string, logger *slog.Logger) *TelegramBot {
 // Start инициализирует клиента Bot API, регистрирует обработчики и запускает
 // long-polling. Блокирует вызывающего, пока ctx не будет отменён.
 func (t *TelegramBot) Start(ctx context.Context) error {
-	b, err := bot.New(t.token)
+	b, err := bot.New(t.token, bot.WithDefaultHandler(t.handleEcho))
 	if err != nil {
 		return errors.Join(ErrInitBot, err)
 	}
