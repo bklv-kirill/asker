@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-telegram/bot"
 
+	telegramUsersRepo "github.com/bklv-kirill/asker/internal/repository/telegram_users"
 	usersRepo "github.com/bklv-kirill/asker/internal/repository/users"
 )
 
@@ -24,11 +25,23 @@ type TelegramBot struct {
 
 	logger *slog.Logger
 
-	users usersRepo.Repository
+	users         usersRepo.Repository
+	telegramUsers telegramUsersRepo.Repository
 }
 
-func NewTelegramBot(token, botName string, logger *slog.Logger, users usersRepo.Repository) *TelegramBot {
-	return &TelegramBot{token: token, botName: botName, logger: logger, users: users}
+func NewTelegramBot(
+	token, botName string,
+	logger *slog.Logger,
+	users usersRepo.Repository,
+	telegramUsers telegramUsersRepo.Repository,
+) *TelegramBot {
+	return &TelegramBot{
+		token:         token,
+		botName:       botName,
+		logger:        logger,
+		users:         users,
+		telegramUsers: telegramUsers,
+	}
 }
 
 // Start инициализирует клиента Bot API, регистрирует обработчики и запускает
