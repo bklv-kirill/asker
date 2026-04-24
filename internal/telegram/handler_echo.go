@@ -30,6 +30,7 @@ func (t *TelegramBot) handleEcho(ctx context.Context, b *bot.Bot, update *models
 		Text:   text,
 	}); err != nil {
 		t.logger.Error("send echo reply", "err", err, "chat_id", chatID)
+
 		return
 	}
 

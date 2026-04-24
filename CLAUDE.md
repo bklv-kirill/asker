@@ -13,10 +13,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Конфиг:** `github.com/spf13/viper`. Единая структура `config.Config` + `config.Load() *Config`. `.env` опционален (читается если лежит в CWD), env vars имеют приоритет. **При любой ошибке загрузки или пустом required-поле — `panic`**: без валидного конфига приложение не должно стартовать. Все текущие поля (`APP_NAME`, `BOT_NAME`, `TOKEN_BOT_TOKEN`, `DB_PATH`) обязательные. При добавлении новой переменной — править: структуру `Config`, список `BindEnv` и (если требуется) `requireNonEmpty` в `internal/config/config.go`, `.env.example`, таблицу переменных в `SPEC.md`, блок `environment:` в `docker-compose.yaml`.
 - **Хранилище:** SQLite через `github.com/mattn/go-sqlite3` (cgo, поэтому в Dockerfile `build-base`) + голый `database/sql` (без ORM/sqlx). Пакет `internal/storage/sqlite`, `New(cfg *config.Config, logger *slog.Logger) *sql.DB` — open + ping, возвращает готовый `*sql.DB`. **При любой ошибке — `panic` через `fmt.Errorf("sqlite: ...: %w", err)`** (консистентно с `config.Load`: без валидного хранилища приложение не должно стартовать). При неудаче ping соединение закрывается перед panic, чтобы не текли дескрипторы. `panic(fmt.Errorf(...))` не нарушает правила «ошибки только через переменные» — правило касается только `return`. Файл БД — bind-mount `./data:/data`, путь задаёт `DB_PATH` (dev: `/data/asker.db`); каталог `./data/` в `.gitignore`.
 - **Репозитории:** один пакет на модель в `internal/repository/<model>/`. Имя пакета — `<model>Repo` (пример: папка `users/` → `package usersRepo`). Раскладка по файлам внутри пакета: `<model>.go` — контракт (интерфейс `Repository` + sentinel-ошибки), `<driver>.go` — реализация под конкретное хранилище (пример: `sqlite.go` — `usersSQLiteRepo` + `NewUsersSQLiteRepo(db *sql.DB) Repository`). Паттерн — **exported interface + unexported struct**: конструктор возвращает интерфейс, потребители (хендлеры, сервисы) зависят от интерфейса, а не от конкретной реализации. Соединение с БД живёт в `main.go` — репозиторий его **не закрывает**. Методы принимают `ctx context.Context` и используют `db.ExecContext` / `QueryContext` — это обязательно, не опция. Ошибки возвращаются через sentinel уровня пакета (`var ErrCreate = errors.New("users: create")`) + `errors.Join(sentinel, cause)`, без `fmt.Errorf` в `return` (правило проекта).
+- **Доменные модели:** общие дата-структуры (`TelegramUser` и т.п.) живут в пакете `internal/models` (файл на модель: `internal/models/<model>.go`). Пакет `models` **без зависимостей** от БД-драйверов (`database/sql`, `sql.NullString`) и бизнес-логики — только поля, опциональные как `*T`. Репозитории и хендлеры импортируют `models` и возвращают/принимают `*models.X`; маппинг в БД-специфичные типы (`sql.NullString` и т.п.) делается локальными хелперами в `internal/repository/<model>/<driver>.go`.
 - **Миграции:** лежат в `migrations/` как раздельные `NNNN_<snake_case>.up.sql` и `NNNN_<snake_case>.down.sql`. Нумерация монотонная (`0001`, `0002`, ...). Новая фича = новая миграция (не редактировать уже применённые). Down-файлы обязаны быть идемпотентны — `DROP TRIGGER IF EXISTS ...; DROP TABLE IF EXISTS ...;`. Порядок внутри одного down: сначала триггер, потом таблица (для наглядности). Порядок между миграциями в down: обратный от up (зависимые таблицы дропаются первыми). **Автоматический runner при инициализации БД намеренно не делаем** — настройка схемы лежит на человеке. Перед первым `docker compose up` (и каждый раз, когда нужно обнулить БД) вручную запускается `./scripts/refresh_db.sh`. `sqlite.New` только открывает файл и делает ping; если таблиц нет — бот упадёт в рантайме на первом запросе (`no such table: ...`), это осознанная цена за простоту и явный жизненный цикл БД. Предложения «давай при старте бота автоматически применим миграции» — отклоняй, ссылаясь на этот пункт.
 - **`scripts/`:** утилитные shell-скрипты, запускаются с хоста (не из контейнера). Сейчас там один скрипт — `refresh_db.sh`, делает полный refresh SQLite: `docker compose stop app` → все `*.down.sql` в обратном порядке → все `*.up.sql` в прямом → `docker compose start app`. Требует `sqlite3` в PATH хоста. Использует `./data/asker.db` напрямую (bind-mount'нутый в контейнер).
 - **Прокси:** стандартные `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` пробрасываются в контейнер через `environment:` compose, берутся из `.env`. В `config.Config` они **не входят** — Go-шный `http.DefaultTransport` подхватывает их автоматически. Обязательны на этом хосте (российский прод) — без прокси `bot.New` падает на `getMe: context deadline exceeded`, т.к. `api.telegram.org` заблокирован. Значения для локальной разработки берутся из `~/.bashrc` (Beget EU); в `.env.example` шаблон с пустыми строками — для деплоя вне РФ прокси не нужен.
-- **Telegram:** `github.com/go-telegram/bot` (v1.20.0), long-polling. Обработчики регистрируются в `TelegramBot.Start` через `b.RegisterHandler(bot.HandlerTypeMessageText, "<cmd>", bot.MatchTypeExact, <method>)`. Default-хендлер (fallback на всё, что не поймали зарегистрированные) подключается через `bot.WithDefaultHandler(t.handleXxx)` в `bot.New(...)` — сейчас так подключён echo (`handler_echo.go`). **Соглашение: один хендлер — один файл.** Каждая команда — приватный метод `*TelegramBot` в отдельном файле `internal/telegram/handler_<name>.go` (пример: `handler_start.go` → `handleStart`, `handler_echo.go` → `handleEcho`). В `telegram.go` лежит только тип `TelegramBot`, конструктор, `Start` и регистрация. Когда количество хендлеров начнёт делиться на явные домены — переедем на группировку `handler_<domain>_<name>.go` одним рефакторингом. Webhook откладывается до Фазы 4 (prod). **Зависимости (репозитории и т.п.) инжектируются через конструктор `NewTelegramBot` и хранятся приватными полями `*TelegramBot`** — хендлеры обращаются к ним через `t.<field>` (сейчас так подключён `t.telegramUsers telegramUsersRepo.Repository`). Новая доменная зависимость добавляется в три места: поле структуры, параметр конструктора, присваивание в `NewTelegramBot`. Внутри пакета `telegram` зависимости создавать нельзя — только принимать готовыми.
+- **Telegram:** `github.com/go-telegram/bot` (v1.20.0), long-polling. Обработчики регистрируются в `TelegramBot.Start` через `b.RegisterHandler(bot.HandlerTypeMessageText, "<cmd>", bot.MatchTypeExact, <method>)`. Default-хендлер (fallback на всё, что не поймали зарегистрированные) подключается через `bot.WithDefaultHandler(t.handleXxx)` в `bot.New(...)` — сейчас так подключён echo (`handler_echo.go`). **Соглашение: один хендлер — один файл.** Каждая команда — приватный метод `*TelegramBot` в отдельном файле `internal/telegram/handler_<name>.go` (пример: `handler_start.go` → `handleStart`, `handler_echo.go` → `handleEcho`). В `telegram.go` лежит тип `TelegramBot`, конструктор, `Start`, регистрация и **доменные методы `*TelegramBot`, переиспользуемые несколькими хендлерами** (например, `CreateNewTelegramUserIfNotExists` — идемпотентно сохраняет TG-аккаунт в `telegram_users`; ошибки логирует, наружу не возвращает). Когда количество хендлеров начнёт делиться на явные домены — переедем на группировку `handler_<domain>_<name>.go` одним рефакторингом. Webhook откладывается до Фазы 4 (prod). **Зависимости (репозитории и т.п.) инжектируются через конструктор `NewTelegramBot` и хранятся приватными полями `*TelegramBot`** — хендлеры обращаются к ним через `t.<field>` (сейчас так подключён `t.telegramUsers telegramUsersRepo.Repository`). Новая доменная зависимость добавляется в три места: поле структуры, параметр конструктора, присваивание в `NewTelegramBot`. Внутри пакета `telegram` зависимости создавать нельзя — только принимать готовыми.
 - **Логирование:** stdlib `log/slog`. Root-логгер (`slog.NewTextHandler(os.Stdout, nil)`) создаётся в `main`, передаётся в компоненты третьим аргументом конструктора (`NewTelegramBot(token, botName, logger)`), хранится в поле `logger`. Пакет `log` в проекте не использовать — только `slog`. В `main.go` вместо `log.Fatalf` — `logger.Error(...)` + `os.Exit(1)`. При добавлении нового компонента (бот-handler, HTTP-клиент, хранилище) — принимай `*slog.Logger` в конструкторе, логгер **не** создавай внутри пакета.
 - **Без prod-Dockerfile.** Multi-stage под prod появится на Фазе 4.
 
@@ -128,6 +129,51 @@ if _, err := b.SendMessage(ctx, ...); err != nil { ... }
 - Распространяется на локальные переменные (внутри функций/методов) и на inline-формы `if`/`for`/`switch`: `if err := foo(); ...` → вынести на строку выше как `var err error = foo(); if err != nil { ... }`.
 - На параметры функций, поля структур, пакетные `var`-блоки и константы (`const`) правило не распространяется — там тип и так обязан быть указан по синтаксису Go.
 - `var exists int` (без инициализации) — валидно: тип явно указан, значение — zero.
+
+## Пустая строка перед `return`
+
+**Правило проекта (обязательное).** Перед каждым `return` ставится пустая строка, отделяющая выход от предыдущего кода.
+
+Единственное исключение — **`return` является единственной инструкцией в своём блоке** (`if`, `else`, `case`, `func` с одним выражением и т.п.). В этом случае пустая строка избыточна.
+
+Примеры:
+
+```go
+// ❌ Нельзя
+func foo() (int, error) {
+    x, err := bar()
+    if err != nil {
+        return 0, err
+    }
+    y := x * 2
+    return y, nil
+}
+
+// ✅ Надо
+func foo() (int, error) {
+    x, err := bar()
+    if err != nil {
+        return 0, err
+    }
+
+    y := x * 2
+
+    return y, nil
+}
+
+// ✅ Исключение — единственная инструкция в блоке
+func id(x int) int {
+    return x
+}
+
+if exists {
+    return
+}
+```
+
+Зачем:
+- Визуально отделяет точку выхода от подготовки — легче читать, где именно функция возвращается.
+- Диффы чище: добавление строки между подготовкой и `return` не ломает отступ у return.
 
 ## Host context
 
