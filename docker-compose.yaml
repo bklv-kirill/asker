@@ -12,6 +12,9 @@ services:
       APP_NAME: ${APP_NAME}
       BOT_NAME: ${BOT_NAME}
       TOKEN_BOT_TOKEN: ${TOKEN_BOT_TOKEN}
+      HTTP_PROXY: ${HTTP_PROXY}
+      HTTPS_PROXY: ${HTTPS_PROXY}
+      NO_PROXY: ${NO_PROXY}
     networks:
       - app
 
