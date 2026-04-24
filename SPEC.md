@@ -42,6 +42,11 @@ asker/
 ├── .dockerignore
 ├── go.mod
 ├── go.sum
+├── migrations/          — SQL-миграции: файлы вида NNNN_<name>.up.sql / NNNN_<name>.down.sql
+│   ├── 0001_users.up.sql / 0001_users.down.sql
+│   └── 0002_telegram_users.up.sql / 0002_telegram_users.down.sql
+├── scripts/             — утилитные скрипты (запускаются с хоста)
+│   └── refresh_db.sh    — откатывает все down → применяет все up → перезапускает контейнер
 ├── cmd/
 │   └── bot/
 │       └── main.go      — точка входа: загружает Config, открывает SQLite, создаёт TelegramBot, запускает long-polling до SIGINT/SIGTERM
@@ -97,7 +102,7 @@ docker compose up --build
 - [x] **Фаза 0 — Скаффолд инфраструктуры.** docker-compose + Dockerfile + air + базовый Go-луп `working...`.
 - [x] **Фаза 1 — Подключение к Telegram (БАЗА).** Клиент `github.com/go-telegram/bot` в long-polling, структура `TelegramBot` с `NewTelegramBot(token, botName)` и `Start(ctx)`, обработка `/start` с персонализированным приветствием, graceful shutdown по SIGINT/SIGTERM. Расширение набора команд — в следующих фазах.
 - [ ] **Фаза 2 — Функционал бота «Герман».** Определяется отдельно.
-- [~] **Фаза 3 — Хранилище.** SQLite подключён: пакет `internal/storage/sqlite` с `New(cfg, logger) *sql.DB` (open + ping, panic при ошибке — консистентно с `config.Load`), файл лежит в bind-mount `./data/asker.db`. Схема таблиц и конкретные репозитории (под модели) — следующим шагом.
+- [~] **Фаза 3 — Хранилище.** SQLite подключён: пакет `internal/storage/sqlite` с `New(cfg, logger) *sql.DB` (open + ping, panic при ошибке — консистентно с `config.Load`), файл лежит в bind-mount `./data/asker.db`. Добавлены миграции `0001_users` (доменный пользователь: name/gender/age/info) и `0002_telegram_users` (привязка users ↔ telegram_user_id, 1-к-1 через `UNIQUE(user_id)` и `UNIQUE(telegram_user_id)`, FK с `ON DELETE CASCADE`, триггеры `AFTER UPDATE` на `updated_at`). Миграции лежат в `migrations/` как раздельные `.up.sql` / `.down.sql`; скрипт `scripts/refresh_db.sh` делает полный refresh (все down в обратном порядке → все up в прямом, с остановкой/стартом контейнера). Runner внутри приложения (автоприменение при старте) и конкретные репозитории под модели — следующие шаги.
 - [ ] **Фаза 4 — Prod-деплой.** Multi-stage Dockerfile, systemd / compose-стек на сервере, nginx (если нужен webhook).
 
 ## Changelog
@@ -112,3 +117,4 @@ docker compose up --build
 - **2026-04-24** — добавлен echo-хендлер (`handler_echo.go`): подключён в `Start` через `bot.WithDefaultHandler`, повторяет любое текстовое сообщение, которое не поймали зарегистрированные команды, логирует `incoming message` и `outgoing reply` через slog.
 - **2026-04-24** — прокинут HTTP(S)-прокси в контейнер: `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` добавлены в `.env.example`, `.env` и `environment:` compose. Без прокси `bot.New` падал на `getMe: context deadline exceeded` из-за блокировки `api.telegram.org` на российском хосте. Go-шный `http.DefaultTransport` подхватывает эти env автоматически — код не менялся.
 - **2026-04-25** — Фаза 3 (база): добавлен пакет `internal/storage/sqlite` с `New(cfg, logger) *sql.DB` (драйвер `github.com/mattn/go-sqlite3`, голый `database/sql`). Контракт — panic при любой ошибке open/ping (консистентно с `config.Load`); при неудаче ping соединение закрывается перед panic. В Dockerfile добавлен `build-base` для cgo, в compose — bind-mount `./data:/data`, в `config.Config` — обязательное поле `DBPath` (env `DB_PATH`). `main.go` открывает БД при старте, `defer db.Close()`. Репозитории под модели будут отдельно и принимать `*sql.DB` в конструкторах.
+- **2026-04-25** — Фаза 3 (миграции + refresh): добавлены миграции `migrations/0001_users` и `migrations/0002_telegram_users` в формате раздельных `.up.sql` / `.down.sql`. Схема зафиксирована: `users(id, name, gender, age, info, created_at, updated_at)` + триггер на `updated_at`; `telegram_users(id, user_id UNIQUE, telegram_user_id UNIQUE, created_at, updated_at, FK users ON DELETE CASCADE)` + триггер. `gender` = TEXT CHECK enum (`'мужчина'`/`'женщина'`), `age` CHECK 1..120. Добавлен `scripts/refresh_db.sh` — останавливает контейнер, прогоняет все down в обратном порядке, up в прямом, стартует контейнер. Down-миграции идемпотентны (`DROP ... IF EXISTS`), sqlite3-клиент ожидается на хосте. Runner внутри приложения (авто-apply при старте) ещё не подключён.
