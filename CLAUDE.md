@@ -4,23 +4,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-Проект — **Фаза 0 (скаффолд инфраструктуры)**. Source of truth — `SPEC.md` в корне; читай его перед любыми решениями о фичах. Стек зафиксирован:
+Проект — **Фаза 1 (БАЗА Telegram-бота)**. Source of truth — `SPEC.md` в корне; читай его перед любыми решениями о фичах. Стек зафиксирован:
 
 - **Язык/рантайм:** Go 1.25.
 - **Модуль:** `github.com/bklv-kirill/asker`.
 - **Упаковка:** docker-compose + собственный dev-Dockerfile на базе `golang:1.25-alpine` с установленным `air` (`github.com/air-verse/air`) для hot reload.
-- **Структура:** `cmd/bot/main.go` — точка входа; `internal/config` — загрузка конфига (viper: `.env` + env vars → `Config`). Другие подпакеты в `internal/` будут добавляться по мере роста. Сейчас `main.go` читает `Config` через `config.Load()`, логирует `starting <APP_NAME> (<BOT_NAME>)` через `log` и крутит 3-секундный луп `working...` — плейсхолдер под будущего Telegram-бота.
-- **Конфиг:** `github.com/spf13/viper`. Единая структура `config.Config` + `config.Load() *Config`. `.env` опционален (читается если лежит в CWD), env vars имеют приоритет. **При любой ошибке загрузки — `panic`**: без валидного конфига приложение не должно стартовать, поэтому возвращать `error` смысла нет. При добавлении новой переменной — править: структуру `Config`, список `BindEnv` в `internal/config/config.go`, `.env.example`, таблицу переменных в `SPEC.md`, блок `environment:` в `docker-compose.yaml`.
+- **Структура:** `cmd/bot/main.go` — точка входа; `internal/config` — загрузка конфига (viper: `.env` + env vars → `Config`); `internal/telegram` — `TelegramBot` (клиент `github.com/go-telegram/bot` в long-polling, обработчик `/start`). `main.go` на старте: `config.Load()` → `signal.NotifyContext(SIGINT, SIGTERM)` → `telegram.NewTelegramBot(token, botName).Start(ctx)` (блокирует до отмены контекста).
+- **Конфиг:** `github.com/spf13/viper`. Единая структура `config.Config` + `config.Load() *Config`. `.env` опционален (читается если лежит в CWD), env vars имеют приоритет. **При любой ошибке загрузки или пустом required-поле — `panic`**: без валидного конфига приложение не должно стартовать. Все текущие поля (`APP_NAME`, `BOT_NAME`, `TOKEN_BOT_TOKEN`) обязательные. При добавлении новой переменной — править: структуру `Config`, список `BindEnv` и (если требуется) `requireNonEmpty` в `internal/config/config.go`, `.env.example`, таблицу переменных в `SPEC.md`, блок `environment:` в `docker-compose.yaml`.
+- **Telegram:** `github.com/go-telegram/bot` (v1.20.0), long-polling. Обработчики регистрируются в `TelegramBot.Start` через `b.RegisterHandler(bot.HandlerTypeMessageText, "<cmd>", bot.MatchTypeExact, <method>)`. Новые команды — приватные методы `*TelegramBot` рядом с `handleStart`. Webhook откладывается до Фазы 4 (prod).
 - **Без prod-Dockerfile.** Multi-stage под prod появится на Фазе 4.
 
 ## Как запустить
 
 ```bash
 cp .env.example .env     # обязательно — compose интерполирует ${APP_NAME}
+# Проставить валидный TOKEN_BOT_TOKEN (получить у @BotFather), иначе config.Load упадёт в panic
 docker compose up --build
 ```
 
-В stdout пойдёт `working...` каждые 3 секунды. При сохранении `.go` файла `air` сам пересобирает и перезапускает бинарник внутри контейнера — руками ничего не нужно.
+В stdout появляется `YYYY/MM/DD HH:MM:SS starting Asker (Герман)`, затем процесс висит в long-polling. На команду `/start` в чате с ботом бот отвечает `Привет, <FirstName>! Я <BotName>.`. При сохранении `.go` файла `air` сам пересобирает и перезапускает бинарник внутри контейнера — руками ничего не нужно.
 
 Остановить: `docker compose down`. Логи: `docker compose logs -f app`.
 
