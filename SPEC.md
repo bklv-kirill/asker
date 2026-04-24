@@ -49,14 +49,17 @@ asker/
 │   └── refresh_db.sh    — откатывает все down → применяет все up → перезапускает контейнер
 ├── cmd/
 │   └── bot/
-│       └── main.go      — точка входа: загружает Config, открывает SQLite, собирает репозитории (usersRepo), создаёт TelegramBot, запускает long-polling до SIGINT/SIGTERM
+│       └── main.go      — точка входа: загружает Config, открывает SQLite, собирает репозитории (usersRepo, telegramUsersRepo), создаёт TelegramBot, запускает long-polling до SIGINT/SIGTERM
 └── internal/
     ├── config/
     │   └── config.go    — структура Config и функция Load() (viper: .env + env vars, panic при ошибке или пустом required-поле)
     ├── repository/
-    │   └── users/              — пакет usersRepo
-    │       ├── users.go        — интерфейс Repository + ErrCreate (контракт доступа к таблице users)
-    │       └── sqlite.go       — реализация поверх SQLite: usersSQLiteRepo + NewUsersSQLiteRepo(db) Repository
+    │   ├── users/                      — пакет usersRepo
+    │   │   ├── users.go                — интерфейс Repository + ErrCreate (контракт доступа к таблице users)
+    │   │   └── sqlite.go               — реализация поверх SQLite: usersSQLiteRepo + NewUsersSQLiteRepo(db) Repository
+    │   └── telegram_users/             — пакет telegramUsersRepo
+    │       ├── telegram_users.go       — интерфейс Repository + ErrCreate (контракт доступа к таблице telegram_users)
+    │       └── sqlite.go               — реализация поверх SQLite: telegramUsersSQLiteRepo + NewTelegramUsersSQLiteRepo(db) Repository
     ├── storage/
     │   └── sqlite/
     │       └── sqlite.go  — New(cfg, logger) *sql.DB: открывает SQLite-файл, делает ping, возвращает соединение; panic при любой ошибке
@@ -124,3 +127,4 @@ docker compose up --build
 - **2026-04-25** — Фаза 3 (миграции + refresh): добавлены миграции `migrations/0001_users` и `migrations/0002_telegram_users` в формате раздельных `.up.sql` / `.down.sql`. Схема зафиксирована: `users(id, name, gender, age, info, created_at, updated_at)` + триггер на `updated_at`; `telegram_users(id, user_id UNIQUE, telegram_user_id UNIQUE, created_at, updated_at, FK users ON DELETE CASCADE)` + триггер. `gender` = TEXT CHECK enum (`'мужчина'`/`'женщина'`), `age` CHECK 1..120. Добавлен `scripts/refresh_db.sh` — останавливает контейнер, прогоняет все down в обратном порядке, up в прямом, стартует контейнер. Down-миграции идемпотентны (`DROP ... IF EXISTS`), sqlite3-клиент ожидается на хосте. Runner внутри приложения (авто-apply при старте) ещё не подключён.
 - **2026-04-25** — Фаза 3 (репозиторий users): добавлен `internal/repository/users` (пакет `usersRepo`) — `users.go` хранит контракт (интерфейс `Repository` с методом `Create(ctx, name) (int64, error)` + sentinel `ErrCreate`), `sqlite.go` — реализацию поверх `*sql.DB` (приватная `usersSQLiteRepo`, конструктор `NewUsersSQLiteRepo(db) Repository`). Соединение не закрывается репозиторием (жизненный цикл — в `main`). Ошибки через `errors.Join(ErrCreate, cause)`.
 - **2026-04-25** — DI: `usersRepo.Repository` прокинут в `TelegramBot`. `NewTelegramBot` принимает его четвёртым аргументом, хранит в поле `users`. `main.go` собирает реализацию (`usersRepo.NewUsersSQLiteRepo(db)`) сразу после `sqlite.New` и передаёт в конструктор бота. Хендлеры пока репозиторий не используют — DI сделан заранее, под будущее подключение.
+- **2026-04-25** — Фаза 3 (репозиторий telegram_users + DI): добавлен `internal/repository/telegram_users` (пакет `telegramUsersRepo`) с интерфейсом `Repository.Create(ctx, userID, telegramUserID) (int64, error)` и реализацией `telegramUsersSQLiteRepo` (конструктор `NewTelegramUsersSQLiteRepo(db) Repository`). Ошибки через sentinel `ErrCreate` + `errors.Join`. Прокинут пятым аргументом в `NewTelegramBot`, хранится в поле `telegramUsers`; в `main.go` собирается сразу после `usersRepo`.
