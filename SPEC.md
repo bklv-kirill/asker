@@ -66,9 +66,9 @@ asker/
     │   └── sqlite/
     │       └── sqlite.go  — New(cfg, logger) *sql.DB: открывает SQLite-файл, делает ping, возвращает соединение; panic при любой ошибке
     └── telegram/
-        ├── telegram.go        — структура TelegramBot (NewTelegramBot(token, botName, logger) + Start), регистрация обработчиков
-        ├── handler_start.go   — обработчик /start (приватный метод *TelegramBot)
-        └── handler_echo.go    — default-обработчик: повторяет произвольный текст пользователя, логирует вход и исход
+        ├── telegram.go        — тип TelegramBot, конструктор, Start/регистрация, доменные методы (CreateNewTelegramUserIfNotExists — идемпотентно сохраняет TG-аккаунт, пишет INFO-лог при успешной вставке) и хелпер optionalString
+        ├── handler_start.go   — обработчик /start: если пользователь уже есть, отвечает «Рад тебя снова видеть, <FirstName>!» и выходит; иначе — CreateNewTelegramUserIfNotExists + приветствие «Привет, <FirstName>! Я <BotName>.»
+        └── handler_echo.go    — default-обработчик: перед эхо вызывает CreateNewTelegramUserIfNotExists (страховка на случай общения без /start), логирует входящее и исходящее
 
 Соглашение: каждый обработчик команды живёт в отдельном файле `handler_<name>.go` внутри
 `internal/telegram/` как приватный метод `*TelegramBot`. Регистрация всех обработчиков —
