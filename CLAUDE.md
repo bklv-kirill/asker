@@ -12,6 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Структура:** `cmd/bot/main.go` — точка входа; `internal/config` — загрузка конфига (viper: `.env` + env vars → `Config`); `internal/telegram` — `TelegramBot` (клиент `github.com/go-telegram/bot` в long-polling, обработчик `/start`). `main.go` на старте: `config.Load()` → `signal.NotifyContext(SIGINT, SIGTERM)` → `telegram.NewTelegramBot(token, botName).Start(ctx)` (блокирует до отмены контекста).
 - **Конфиг:** `github.com/spf13/viper`. Единая структура `config.Config` + `config.Load() *Config`. `.env` опционален (читается если лежит в CWD), env vars имеют приоритет. **При любой ошибке загрузки или пустом required-поле — `panic`**: без валидного конфига приложение не должно стартовать. Все текущие поля (`APP_NAME`, `BOT_NAME`, `TOKEN_BOT_TOKEN`) обязательные. При добавлении новой переменной — править: структуру `Config`, список `BindEnv` и (если требуется) `requireNonEmpty` в `internal/config/config.go`, `.env.example`, таблицу переменных в `SPEC.md`, блок `environment:` в `docker-compose.yaml`.
 - **Telegram:** `github.com/go-telegram/bot` (v1.20.0), long-polling. Обработчики регистрируются в `TelegramBot.Start` через `b.RegisterHandler(bot.HandlerTypeMessageText, "<cmd>", bot.MatchTypeExact, <method>)`. Новые команды — приватные методы `*TelegramBot` рядом с `handleStart`. Webhook откладывается до Фазы 4 (prod).
+- **Логирование:** stdlib `log/slog`. Root-логгер (`slog.NewTextHandler(os.Stdout, nil)`) создаётся в `main`, передаётся в компоненты третьим аргументом конструктора (`NewTelegramBot(token, botName, logger)`), хранится в поле `logger`. Пакет `log` в проекте не использовать — только `slog`. В `main.go` вместо `log.Fatalf` — `logger.Error(...)` + `os.Exit(1)`. При добавлении нового компонента (бот-handler, HTTP-клиент, хранилище) — принимай `*slog.Logger` в конструкторе, логгер **не** создавай внутри пакета.
 - **Без prod-Dockerfile.** Multi-stage под prod появится на Фазе 4.
 
 ## Как запустить
@@ -22,7 +23,7 @@ cp .env.example .env     # обязательно — compose интерполи
 docker compose up --build
 ```
 
-В stdout появляется `YYYY/MM/DD HH:MM:SS starting Asker (Герман)`, затем процесс висит в long-polling. На команду `/start` в чате с ботом бот отвечает `Привет, <FirstName>! Я <BotName>.`. При сохранении `.go` файла `air` сам пересобирает и перезапускает бинарник внутри контейнера — руками ничего не нужно.
+В stdout появляется `time=... level=INFO msg=starting app=Asker bot=Герман` (формат `slog.TextHandler`), затем процесс висит в long-polling. На команду `/start` в чате с ботом бот отвечает `Привет, <FirstName>! Я <BotName>.`. При сохранении `.go` файла `air` сам пересобирает и перезапускает бинарник внутри контейнера — руками ничего не нужно.
 
 Остановить: `docker compose down`. Логи: `docker compose logs -f app`.
 

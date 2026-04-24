@@ -23,6 +23,7 @@
 | Секреты | `.env` в корне (шаблон — `.env.example`) |
 | Конфиг | `github.com/spf13/viper` — загрузка `.env` + env vars в единую структуру `Config` |
 | Telegram | `github.com/go-telegram/bot` — клиент Bot API в режиме long-polling |
+| Логирование | `log/slog` (stdlib) — root-логгер создаётся в `main`, передаётся компонентам DI-стилем |
 
 Зависимости (БД, Redis, внешние API) **пока отсутствуют**. Появятся после решения о функционале бота.
 
@@ -47,7 +48,7 @@ asker/
     ├── config/
     │   └── config.go    — структура Config и функция Load() (viper: .env + env vars, panic при ошибке или пустом required-поле)
     └── telegram/
-        └── telegram.go  — структура TelegramBot (NewTelegramBot + Start), обработчик /start
+        └── telegram.go  — структура TelegramBot (NewTelegramBot(token, botName, logger) + Start), обработчик /start, логирование через slog
 ```
 
 ## Как запустить локально
@@ -58,7 +59,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-После старта в stdout идёт лог вида `YYYY/MM/DD HH:MM:SS starting Asker (Герман)`, затем бот ждёт апдейты в long-polling. На команду `/start` от пользователя отвечает `Привет, <FirstName>! Я <BotName>.`. При изменении `.go` файлов `air` автоматически пересобирает и перезапускает бинарник.
+После старта в stdout идёт лог вида `time=... level=INFO msg=starting app=Asker bot=Герман` (формат `slog.TextHandler`), затем бот ждёт апдейты в long-polling. На команду `/start` от пользователя отвечает `Привет, <FirstName>! Я <BotName>.`. При изменении `.go` файлов `air` автоматически пересобирает и перезапускает бинарник.
 
 ## Переменные окружения
 
@@ -87,3 +88,4 @@ docker compose up --build
 - **2026-04-24** — `config.Load` больше не возвращает `error`: при любой ошибке загрузки — `panic`; `main.go` упрощён (без проверки ошибки).
 - **2026-04-24** — `config.Load` дополнительно валидирует непустоту всех полей (`APP_NAME`, `BOT_NAME`, `TOKEN_BOT_TOKEN`) — panic при пустом значении.
 - **2026-04-24** — Фаза 1: добавлен `internal/telegram` на базе `github.com/go-telegram/bot`: структура `TelegramBot` (`NewTelegramBot(token, botName)` + `Start(ctx)`), приватный обработчик `/start` с приветствием `Привет, {FirstName}! Я {BotName}.`; `main.go` запускает бота с `signal.NotifyContext` (SIGINT/SIGTERM) для чистого shutdown.
+- **2026-04-24** — введён `log/slog` как единственный логгер: root создаётся в `main` (`slog.NewTextHandler(os.Stdout, nil)`), `NewTelegramBot` принимает `*slog.Logger` третьим аргументом и сохраняет в поле `logger`; `main.go` перешёл с `log` на slog, `log.Fatalf` заменён на `logger.Error` + `os.Exit(1)`.
