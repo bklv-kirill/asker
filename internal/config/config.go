@@ -40,5 +40,16 @@ func Load() *Config {
 	if err := v.Unmarshal(&cfg); err != nil {
 		panic(fmt.Errorf("config: unmarshal: %w", err))
 	}
+
+	requireNonEmpty("APP_NAME", cfg.AppName)
+	requireNonEmpty("BOT_NAME", cfg.BotName)
+	requireNonEmpty("TOKEN_BOT_TOKEN", cfg.TokenBotToken)
+
 	return &cfg
+}
+
+func requireNonEmpty(key, value string) {
+	if value == "" {
+		panic(fmt.Errorf("config: %s is required but empty", key))
+	}
 }
