@@ -5,7 +5,7 @@ package sqlite
 
 import (
 	"database/sql"
-	"errors"
+	"fmt"
 	"log/slog"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -13,26 +13,22 @@ import (
 	"github.com/bklv-kirill/asker/internal/config"
 )
 
-var (
-	ErrOpen = errors.New("sqlite: open database")
-	ErrPing = errors.New("sqlite: ping database")
-)
-
 // New открывает SQLite-файл по пути из cfg.DBPath и проверяет соединение.
-// При неудаче ping соединение закрывается до возврата ошибки, чтобы не
-// оставлять висящих дескрипторов.
-func New(cfg *config.Config, logger *slog.Logger) (*sql.DB, error) {
+// При любой ошибке — panic: без валидного хранилища приложение не должно
+// стартовать (консистентно с контрактом config.Load). При неудаче ping
+// соединение закрывается перед паникой, чтобы не оставлять висящих дескрипторов.
+func New(cfg *config.Config, logger *slog.Logger) *sql.DB {
 	db, err := sql.Open("sqlite3", cfg.DBPath)
 	if err != nil {
-		return nil, errors.Join(ErrOpen, err)
+		panic(fmt.Errorf("sqlite: open %s: %w", cfg.DBPath, err))
 	}
 
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
-		return nil, errors.Join(ErrPing, err)
+		panic(fmt.Errorf("sqlite: ping %s: %w", cfg.DBPath, err))
 	}
 
 	logger.Info("sqlite opened", "path", cfg.DBPath)
 
-	return db, nil
+	return db
 }

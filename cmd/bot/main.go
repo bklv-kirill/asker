@@ -23,11 +23,7 @@ func main() {
 
 	logger.Info("starting", "app", cfg.AppName, "bot", cfg.BotName)
 
-	db, err := sqlite.New(cfg, logger)
-	if err != nil {
-		logger.Error("sqlite open", "err", err)
-		os.Exit(1)
-	}
+	db := sqlite.New(cfg, logger)
 	defer func() {
 		if err := db.Close(); err != nil {
 			logger.Error("sqlite close", "err", err)
