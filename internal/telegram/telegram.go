@@ -1,15 +1,17 @@
 // Package telegram инкапсулирует жизненный цикл Telegram-бота: инициализацию клиента,
 // регистрацию обработчиков команд и запуск long-polling.
+//
+// Соглашение: каждый обработчик команды живёт в отдельном файле handler_<name>.go
+// (например, handler_start.go) как приватный метод *TelegramBot. Регистрация всех
+// обработчиков выполняется в Start.
 package telegram
 
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 
 	"github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
 )
 
 var ErrInitBot = errors.New("telegram: init bot")
@@ -18,7 +20,7 @@ type TelegramBot struct {
 	token   string
 	botName string
 
-	logger  *slog.Logger
+	logger *slog.Logger
 }
 
 func NewTelegramBot(token, botName string, logger *slog.Logger) *TelegramBot {
@@ -38,18 +40,4 @@ func (t *TelegramBot) Start(ctx context.Context) error {
 	b.Start(ctx)
 
 	return nil
-}
-
-func (t *TelegramBot) handleStart(ctx context.Context, b *bot.Bot, update *models.Update) {
-	if update.Message == nil || update.Message.From == nil {
-		return
-	}
-
-	text := fmt.Sprintf("Привет, %s! Я %s.", update.Message.From.FirstName, t.botName)
-	if _, err := b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: update.Message.Chat.ID,
-		Text:   text,
-	}); err != nil {
-		t.logger.Error("send /start reply", "err", err, "chat_id", update.Message.Chat.ID)
-	}
 }
