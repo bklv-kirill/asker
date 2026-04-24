@@ -21,6 +21,7 @@
 | Оркестрация | docker-compose (один bridge-network `app`) |
 | Dev-режим | Hot reload через `air` (`github.com/air-verse/air`) |
 | Секреты | `.env` в корне (шаблон — `.env.example`) |
+| Конфиг | `github.com/spf13/viper` — загрузка `.env` + env vars в единую структуру `Config` |
 
 Зависимости (БД, Redis, внешние API) **пока отсутствуют**. Появятся после решения о функционале бота.
 
@@ -37,9 +38,13 @@ asker/
 ├── .gitignore
 ├── .dockerignore
 ├── go.mod
-└── cmd/
-    └── bot/
-        └── main.go      — точка входа, сейчас — луп «working...»
+├── go.sum
+├── cmd/
+│   └── bot/
+│       └── main.go      — точка входа, загружает Config и запускает луп «working...»
+└── internal/
+    └── config/
+        └── config.go    — структура Config и функция Load() (viper: .env + env vars)
 ```
 
 ## Как запустить локально
@@ -54,11 +59,13 @@ docker compose up --build
 
 ## Переменные окружения
 
-| Имя | Назначение | Обязательная |
-|---|---|---|
-| `APP_NAME` | Префикс имени контейнера и идентификатор приложения | да |
-| `BOT_NAME` | Отображаемое имя бота | да (в фазе бота) |
-| `TOKEN_BOT_TOKEN` | Токен Telegram Bot API | да (в фазе бота) |
+Загружаются через `internal/config` (viper): сначала читается `.env` в корне проекта (если есть), затем поверх накладываются переменные окружения процесса — env vars имеют приоритет. Публичный API: `config.Load() (*Config, error)`.
+
+| Имя | Поле `Config` | Назначение | Обязательная |
+|---|---|---|---|
+| `APP_NAME` | `AppName` | Префикс имени контейнера и идентификатор приложения | да |
+| `BOT_NAME` | `BotName` | Отображаемое имя бота | да (в фазе бота) |
+| `TOKEN_BOT_TOKEN` | `TokenBotToken` | Токен Telegram Bot API | да (в фазе бота) |
 
 ## Фазы реализации
 
@@ -71,3 +78,4 @@ docker compose up --build
 ## Changelog
 
 - **2026-04-24** — создан SPEC, скаффолд инфраструктуры (Фаза 0).
+- **2026-04-24** — добавлен `internal/config` на базе `github.com/spf13/viper`: единая структура `Config` и функция `Load()`; `main.go` читает конфиг при старте.

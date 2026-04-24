@@ -9,7 +9,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Язык/рантайм:** Go 1.25.
 - **Модуль:** `github.com/bklv-kirill/asker`.
 - **Упаковка:** docker-compose + собственный dev-Dockerfile на базе `golang:1.25-alpine` с установленным `air` (`github.com/air-verse/air`) для hot reload.
-- **Структура:** `cmd/bot/main.go` — точка входа; `internal/` появится по мере роста. Сейчас `main.go` — это 3-секундный луп с `fmt.Println("working...")`, плейсхолдер под будущего Telegram-бота.
+- **Структура:** `cmd/bot/main.go` — точка входа; `internal/config` — загрузка конфига (viper: `.env` + env vars → `Config`). Другие подпакеты в `internal/` будут добавляться по мере роста. Сейчас `main.go` читает `Config` через `config.Load()`, печатает `starting <APP_NAME> (<BOT_NAME>)` и крутит 3-секундный луп `working...` — плейсхолдер под будущего Telegram-бота.
+- **Конфиг:** `github.com/spf13/viper`. Единая структура `config.Config` + `config.Load() (*Config, error)`. `.env` опционален (читается если лежит в CWD), env vars имеют приоритет. При добавлении новой переменной — править: структуру `Config`, список `BindEnv` в `internal/config/config.go`, `.env.example`, таблицу переменных в `SPEC.md`, блок `environment:` в `docker-compose.yaml`.
 - **Без prod-Dockerfile.** Multi-stage под prod появится на Фазе 4.
 
 ## Как запустить
