@@ -1,0 +1,22 @@
+services:
+  app:
+    container_name: ${APP_NAME}_app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - go-mod-cache:/go/pkg/mod
+    env_file:
+      - .env
+    networks:
+      - app
+
+networks:
+  app:
+    name: app
+    driver: bridge
+
+volumes:
+  go-mod-cache:
