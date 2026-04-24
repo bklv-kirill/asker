@@ -1,21 +1,24 @@
 -- 0002_telegram_users.up.sql
--- Привязка доменного пользователя (users) к его Telegram-аккаунту.
--- Один users.id может иметь максимум одну запись здесь (один TG-аккаунт на юзера);
--- один Telegram-аккаунт принадлежит строго одному users.id (UNIQUE telegram_user_id).
+-- Запись о Telegram-аккаунте. Пока живёт сама по себе: привязки к доменному
+-- users нет (будет добавлена отдельной миграцией, когда появится сценарий,
+-- где такая связь реально нужна).
 
 CREATE TABLE IF NOT EXISTS telegram_users (
     id                INTEGER  PRIMARY KEY AUTOINCREMENT,
-    -- FK на доменного пользователя. UNIQUE жёстко фиксирует отношение 1-к-1:
-    -- у одного users.id не может быть больше одной TG-привязки. CASCADE —
-    -- удаление users чистит привязку. UNIQUE автоматически создаёт индекс,
-    -- отдельный CREATE INDEX на user_id не нужен.
-    user_id           INTEGER  NOT NULL UNIQUE,
     -- ID аккаунта в Telegram (update.Message.From.ID). Может быть большим — int64
-    -- вмещается в SQLite INTEGER. UNIQUE: один TG-аккаунт = одна привязка.
+    -- вмещается в SQLite INTEGER. UNIQUE: один TG-аккаунт = одна запись.
     telegram_user_id  INTEGER  NOT NULL UNIQUE,
+    -- Имя из профиля TG (tgmodels.User.FirstName). В TG это единственное
+    -- обязательное имя — всегда непустое, поэтому NOT NULL.
+    first_name        TEXT     NOT NULL,
+    -- Фамилия (tgmodels.User.LastName) — у многих не задана, TG отдаёт пусто,
+    -- поэтому nullable: хранить именно NULL, а не пустую строку.
+    last_name         TEXT,
+    -- @username (tgmodels.User.Username) — опциональный и меняется во времени,
+    -- identity-полем не является. Identity — только telegram_user_id.
+    username          TEXT,
     created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    updated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Автоматическое обновление updated_at по триггеру (SQLite не умеет

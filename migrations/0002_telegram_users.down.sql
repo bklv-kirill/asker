@@ -1,7 +1,7 @@
 -- 0002_telegram_users.down.sql
--- Откат 0002_telegram_users.up.sql. Эта миграция ссылается на users(id) через FK,
--- поэтому в рамках refresh_db.sh она применяется ПЕРВОЙ (до 0001.down) — иначе
--- с включённым PRAGMA foreign_keys зависимости не дадут корректно дропнуть users.
+-- Откат 0002_telegram_users.up.sql. Таблица сейчас ни с чем не связана (FK на
+-- users убран), поэтому порядок относительно 0001.down неважен — следуем общему
+-- правилу refresh_db.sh: обратный относительно up.
 -- IF EXISTS — для идемпотентности первого прогона на чистой БД.
 
 DROP TRIGGER IF EXISTS telegram_users_set_updated_at;
