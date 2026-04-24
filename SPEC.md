@@ -79,6 +79,14 @@ docker compose up --build
 | `BOT_NAME` | `BotName` | Отображаемое имя бота (используется в приветствии `/start`) | да |
 | `TOKEN_BOT_TOKEN` | `TokenBotToken` | Токен Telegram Bot API | да |
 
+Дополнительно пробрасываются стандартные HTTP-proxy переменные — они нужны только Go-рантайму (`http.DefaultTransport` подхватывает их автоматически) и в `config.Config` не попадают. Требуются на хостах, где `api.telegram.org` заблокирован (например, российский прод-сервер): без прокси `bot.New` падает на `getMe` с `context deadline exceeded`. Если оставить пустыми — Go пойдёт напрямую.
+
+| Имя | Назначение |
+|---|---|
+| `HTTP_PROXY` | HTTP-прокси для исходящих запросов |
+| `HTTPS_PROXY` | HTTPS-прокси для исходящих запросов (используется для `api.telegram.org`) |
+| `NO_PROXY` | Список хостов в обход прокси |
+
 ## Фазы реализации
 
 - [x] **Фаза 0 — Скаффолд инфраструктуры.** docker-compose + Dockerfile + air + базовый Go-луп `working...`.
@@ -97,3 +105,4 @@ docker compose up --build
 - **2026-04-24** — введён `log/slog` как единственный логгер: root создаётся в `main` (`slog.NewTextHandler(os.Stdout, nil)`), `NewTelegramBot` принимает `*slog.Logger` третьим аргументом и сохраняет в поле `logger`; `main.go` перешёл с `log` на slog, `log.Fatalf` заменён на `logger.Error` + `os.Exit(1)`.
 - **2026-04-24** — принята конвенция «один хендлер — один файл»: `handleStart` вынесен из `telegram.go` в `handler_start.go`; в `telegram.go` остались только `TelegramBot`, `NewTelegramBot`, `Start` и регистрация хендлеров.
 - **2026-04-24** — добавлен echo-хендлер (`handler_echo.go`): подключён в `Start` через `bot.WithDefaultHandler`, повторяет любое текстовое сообщение, которое не поймали зарегистрированные команды, логирует `incoming message` и `outgoing reply` через slog.
+- **2026-04-24** — прокинут HTTP(S)-прокси в контейнер: `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` добавлены в `.env.example`, `.env` и `environment:` compose. Без прокси `bot.New` падал на `getMe: context deadline exceeded` из-за блокировки `api.telegram.org` на российском хосте. Go-шный `http.DefaultTransport` подхватывает эти env автоматически — код не менялся.
