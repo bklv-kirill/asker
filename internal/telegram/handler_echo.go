@@ -15,12 +15,16 @@ func (t *TelegramBot) handleEcho(ctx context.Context, b *bot.Bot, update *models
 		return
 	}
 
+	// Пользователь мог начать общение без /start — всё равно фиксируем TG-аккаунт.
+	// Метод идемпотентен: если запись уже есть, это no-op.
+	t.CreateNewTelegramUserIfNotExists(ctx, update.Message.From)
+
 	var chatID int64 = update.Message.Chat.ID
 	var text string = update.Message.Text
 
 	t.logger.Info("incoming message",
 		"chat_id", chatID,
-		"user_id", update.Message.From.ID,
+		"telegram_user_id", update.Message.From.ID,
 		"username", update.Message.From.Username,
 		"text", text,
 	)
