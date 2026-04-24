@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -9,15 +10,14 @@ import (
 
 	"github.com/bklv-kirill/asker/internal/config"
 	telegramUsersRepo "github.com/bklv-kirill/asker/internal/repository/telegram_users"
-	usersRepo "github.com/bklv-kirill/asker/internal/repository/users"
 	"github.com/bklv-kirill/asker/internal/storage/sqlite"
 	"github.com/bklv-kirill/asker/internal/telegram"
 )
 
 func main() {
-	cfg := config.Load()
+	var cfg *config.Config = config.Load()
 
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	var logger *slog.Logger = slog.New(slog.NewTextHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -25,18 +25,24 @@ func main() {
 
 	logger.Info("starting", "app", cfg.AppName, "bot", cfg.BotName)
 
-	db := sqlite.New(cfg, logger)
+	var db *sql.DB = sqlite.New(cfg, logger)
 	defer func() {
-		if err := db.Close(); err != nil {
+		var err error = db.Close()
+		if err != nil {
 			logger.Error("sqlite close", "err", err)
 		}
 	}()
 
-	users := usersRepo.NewUsersSQLiteRepo(db)
-	telegramUsers := telegramUsersRepo.NewTelegramUsersSQLiteRepo(db)
+	var telegramUsers telegramUsersRepo.Repository = telegramUsersRepo.NewTelegramUsersSQLiteRepo(db)
 
-	tg := telegram.NewTelegramBot(cfg.TokenBotToken, cfg.BotName, logger, users, telegramUsers)
-	if err := tg.Start(ctx); err != nil {
+	var tg *telegram.TelegramBot = telegram.NewTelegramBot(
+		cfg.TokenBotToken,
+		cfg.BotName,
+		logger,
+		telegramUsers,
+	)
+	var err error = tg.Start(ctx)
+	if err != nil {
 		logger.Error("telegram start", "err", err)
 		os.Exit(1)
 	}

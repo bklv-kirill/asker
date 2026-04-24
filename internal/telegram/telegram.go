@@ -14,7 +14,6 @@ import (
 	"github.com/go-telegram/bot"
 
 	telegramUsersRepo "github.com/bklv-kirill/asker/internal/repository/telegram_users"
-	usersRepo "github.com/bklv-kirill/asker/internal/repository/users"
 )
 
 var ErrInitBot = errors.New("telegram: init bot")
@@ -25,21 +24,22 @@ type TelegramBot struct {
 
 	logger *slog.Logger
 
-	users         usersRepo.Repository
 	telegramUsers telegramUsersRepo.Repository
 }
 
 func NewTelegramBot(
 	token, botName string,
+
 	logger *slog.Logger,
-	users usersRepo.Repository,
+
 	telegramUsers telegramUsersRepo.Repository,
 ) *TelegramBot {
 	return &TelegramBot{
-		token:         token,
-		botName:       botName,
-		logger:        logger,
-		users:         users,
+		token:   token,
+		botName: botName,
+
+		logger: logger,
+
 		telegramUsers: telegramUsers,
 	}
 }
