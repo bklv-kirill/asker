@@ -49,7 +49,8 @@ asker/
     │   └── config.go    — структура Config и функция Load() (viper: .env + env vars, panic при ошибке или пустом required-поле)
     └── telegram/
         ├── telegram.go        — структура TelegramBot (NewTelegramBot(token, botName, logger) + Start), регистрация обработчиков
-        └── handler_start.go   — обработчик /start (приватный метод *TelegramBot)
+        ├── handler_start.go   — обработчик /start (приватный метод *TelegramBot)
+        └── handler_echo.go    — default-обработчик: повторяет произвольный текст пользователя, логирует вход и исход
 
 Соглашение: каждый обработчик команды живёт в отдельном файле `handler_<name>.go` внутри
 `internal/telegram/` как приватный метод `*TelegramBot`. Регистрация всех обработчиков —
@@ -64,7 +65,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-После старта в stdout идёт лог вида `time=... level=INFO msg=starting app=Asker bot=Герман` (формат `slog.TextHandler`), затем бот ждёт апдейты в long-polling. На команду `/start` от пользователя отвечает `Привет, <FirstName>! Я <BotName>.`. При изменении `.go` файлов `air` автоматически пересобирает и перезапускает бинарник.
+После старта в stdout идёт лог вида `time=... level=INFO msg=starting app=Asker bot=Герман` (формат `slog.TextHandler`), затем бот ждёт апдейты в long-polling. На команду `/start` от пользователя отвечает `Привет, <FirstName>! Я <BotName>.`. На любое другое текстовое сообщение срабатывает echo-хендлер: бот повторяет текст дословно и пишет в лог два события — `incoming message` (chat_id, user_id, username, text) и `outgoing reply` (chat_id, text). При изменении `.go` файлов `air` автоматически пересобирает и перезапускает бинарник.
 
 ## Переменные окружения
 
@@ -95,3 +96,4 @@ docker compose up --build
 - **2026-04-24** — Фаза 1: добавлен `internal/telegram` на базе `github.com/go-telegram/bot`: структура `TelegramBot` (`NewTelegramBot(token, botName)` + `Start(ctx)`), приватный обработчик `/start` с приветствием `Привет, {FirstName}! Я {BotName}.`; `main.go` запускает бота с `signal.NotifyContext` (SIGINT/SIGTERM) для чистого shutdown.
 - **2026-04-24** — введён `log/slog` как единственный логгер: root создаётся в `main` (`slog.NewTextHandler(os.Stdout, nil)`), `NewTelegramBot` принимает `*slog.Logger` третьим аргументом и сохраняет в поле `logger`; `main.go` перешёл с `log` на slog, `log.Fatalf` заменён на `logger.Error` + `os.Exit(1)`.
 - **2026-04-24** — принята конвенция «один хендлер — один файл»: `handleStart` вынесен из `telegram.go` в `handler_start.go`; в `telegram.go` остались только `TelegramBot`, `NewTelegramBot`, `Start` и регистрация хендлеров.
+- **2026-04-24** — добавлен echo-хендлер (`handler_echo.go`): подключён в `Start` через `bot.WithDefaultHandler`, повторяет любое текстовое сообщение, которое не поймали зарегистрированные команды, логирует `incoming message` и `outgoing reply` через slog.
