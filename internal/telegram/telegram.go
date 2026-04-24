@@ -6,7 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -17,10 +17,12 @@ var ErrInitBot = errors.New("telegram: init bot")
 type TelegramBot struct {
 	token   string
 	botName string
+
+	logger  *slog.Logger
 }
 
-func NewTelegramBot(token, botName string) *TelegramBot {
-	return &TelegramBot{token: token, botName: botName}
+func NewTelegramBot(token, botName string, logger *slog.Logger) *TelegramBot {
+	return &TelegramBot{token: token, botName: botName, logger: logger}
 }
 
 // Start инициализирует клиента Bot API, регистрирует обработчики и запускает
@@ -34,6 +36,7 @@ func (t *TelegramBot) Start(ctx context.Context) error {
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, t.handleStart)
 
 	b.Start(ctx)
+
 	return nil
 }
 
@@ -47,6 +50,6 @@ func (t *TelegramBot) handleStart(ctx context.Context, b *bot.Bot, update *model
 		ChatID: update.Message.Chat.ID,
 		Text:   text,
 	}); err != nil {
-		log.Printf("telegram: send /start reply: %v", err)
+		t.logger.Error("send /start reply", "err", err, "chat_id", update.Message.Chat.ID)
 	}
 }

@@ -2,7 +2,8 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
+	"os"
 	"os/signal"
 	"syscall"
 
@@ -13,15 +14,19 @@ import (
 func main() {
 	cfg := config.Load()
 
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	log.Printf("starting %s (%s)", cfg.AppName, cfg.BotName)
+	logger.Info("starting", "app", cfg.AppName, "bot", cfg.BotName)
 
-	tg := telegram.NewTelegramBot(cfg.TokenBotToken, cfg.BotName)
+	tg := telegram.NewTelegramBot(cfg.TokenBotToken, cfg.BotName, logger)
 	if err := tg.Start(ctx); err != nil {
-		log.Fatalf("telegram: %v", err)
+		logger.Error("telegram start", "err", err)
+		os.Exit(1)
 	}
 
-	log.Printf("shutdown complete")
+	logger.Info("shutdown complete")
 }
