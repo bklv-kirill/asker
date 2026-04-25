@@ -12,6 +12,13 @@ import (
 // errors.Join (правило проекта: fmt.Errorf в return запрещён).
 var ErrCreate = errors.New("users: create")
 
+// ErrPhoneTaken — попытка вставить запись с уже занятым phone (UNIQUE-конфликт
+// в БД). Доменно отличается от ErrCreate: вызывающий хендлер показывает
+// пользователю «номер занят», а не «попробуй позже». Реализация определяет
+// этот случай по типизированной ошибке драйвера (sqlite3.ErrConstraintUnique),
+// без string-match.
+var ErrPhoneTaken = errors.New("users: phone taken")
+
 // Repository — интерфейс доступа к таблице users. Потребители (хендлеры,
 // сервисы) зависят от этого интерфейса, а не от конкретной реализации.
 type Repository interface {

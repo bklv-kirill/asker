@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+
+	"github.com/mattn/go-sqlite3"
 )
 
 type usersSQLiteRepo struct {
@@ -24,6 +26,15 @@ func (r *usersSQLiteRepo) Create(ctx context.Context, name, phone string) (int64
 		name, phone,
 	)
 	if err != nil {
+		// В таблице users есть один UNIQUE — phone, поэтому extended-код
+		// SQLITE_CONSTRAINT_UNIQUE однозначно указывает на конфликт по phone.
+		// Если в схеме появятся другие UNIQUE-колонки, потребуется различать
+		// по тексту ошибки или extended-коду + имени колонки.
+		var sqliteErr sqlite3.Error
+		if errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
+			return 0, errors.Join(ErrPhoneTaken, err)
+		}
+
 		return 0, errors.Join(ErrCreate, err)
 	}
 
