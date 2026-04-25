@@ -6,6 +6,14 @@
 
 CREATE TABLE IF NOT EXISTS telegram_users (
     id                INTEGER  PRIMARY KEY AUTOINCREMENT,
+    -- Привязка к доменному users. NULL до момента, когда пользователь
+    -- привязал номер телефона и для него создалась запись users. UNIQUE:
+    -- один доменный пользователь = один TG-аккаунт; SQLite допускает
+    -- множество NULL в UNIQUE-колонке, поэтому до привязки строки не
+    -- конфликтуют между собой. ON DELETE SET NULL: если запись users
+    -- удалена (например, по запросу на забвение) — TG-связь сбрасывается,
+    -- но сам telegram_users остаётся (журнал событий не теряется).
+    user_id           INTEGER  UNIQUE REFERENCES users(id) ON DELETE SET NULL,
     -- ID аккаунта в Telegram (update.Message.From.ID). Может быть большим — int64
     -- вмещается в SQLite INTEGER. UNIQUE: один TG-аккаунт = одна запись.
     telegram_user_id  INTEGER  NOT NULL UNIQUE,
@@ -18,14 +26,6 @@ CREATE TABLE IF NOT EXISTS telegram_users (
     -- @username (tgmodels.User.Username) — опциональный и меняется во времени,
     -- identity-полем не является. Identity — только telegram_user_id.
     username          TEXT,
-    -- Привязка к доменному users. NULL до момента, когда пользователь
-    -- привязал номер телефона и для него создалась запись users. UNIQUE:
-    -- один доменный пользователь = один TG-аккаунт; SQLite допускает
-    -- множество NULL в UNIQUE-колонке, поэтому до привязки строки не
-    -- конфликтуют между собой. ON DELETE SET NULL: если запись users
-    -- удалена (например, по запросу на забвение) — TG-связь сбрасывается,
-    -- но сам telegram_users остаётся (журнал событий не теряется).
-    user_id           INTEGER  UNIQUE REFERENCES users(id) ON DELETE SET NULL,
     created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

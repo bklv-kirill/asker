@@ -6,11 +6,16 @@ package models
 import "time"
 
 // TelegramUser — доменное представление строки таблицы telegram_users.
-// Опциональные поля — *string, чтобы различать «нет значения» (nil) и
-// «пустая строка» (*s == ""). Структура не завязана на тип БД-драйвера
-// (sql.NullString сюда не течёт).
+// Опциональные поля — указатели, чтобы различать «нет значения» (nil) и
+// «пустое значение» (например, *s == ""). Структура не завязана на типы
+// БД-драйвера (sql.NullString / sql.NullInt64 сюда не течёт).
+//
+// UserID — привязка к доменному users(id). NULL до момента, когда
+// пользователь привязал номер телефона; после привязки — внутренний id из
+// users.
 type TelegramUser struct {
 	ID             int64
+	UserID         *int64
 	TelegramUserID int64
 	FirstName      string
 	LastName       *string

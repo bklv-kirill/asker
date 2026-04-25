@@ -27,10 +27,13 @@ func (r *telegramUsersSQLiteRepo) Create(
 	lastName *string,
 	username *string,
 ) (int64, error) {
+	// user_id передаём явным NULL, чтобы порядок колонок в INSERT соответствовал
+	// порядку в схеме (user_id перед telegram_user_id). Запись users появится
+	// позже — через SetUserIDByTelegramUserID, когда юзер привяжет номер.
 	result, err := r.db.ExecContext(
 		ctx,
-		`INSERT INTO telegram_users (telegram_user_id, first_name, last_name, username) VALUES (?, ?, ?, ?)`,
-		telegramUserID, firstName, ptrToNullString(lastName), ptrToNullString(username),
+		`INSERT INTO telegram_users (user_id, telegram_user_id, first_name, last_name, username) VALUES (?, ?, ?, ?, ?)`,
+		sql.NullInt64{}, telegramUserID, firstName, ptrToNullString(lastName), ptrToNullString(username),
 	)
 	if err != nil {
 		return 0, errors.Join(ErrCreate, err)
@@ -64,6 +67,7 @@ func (r *telegramUsersSQLiteRepo) ExistsByTelegramUserID(ctx context.Context, te
 func (r *telegramUsersSQLiteRepo) GetByTelegramUserID(ctx context.Context, telegramUserID int64) (*models.TelegramUser, error) {
 	var (
 		id        int64
+		userID    sql.NullInt64
 		tgUserID  int64
 		firstName string
 		lastName  sql.NullString
@@ -73,12 +77,12 @@ func (r *telegramUsersSQLiteRepo) GetByTelegramUserID(ctx context.Context, teleg
 	)
 	var err error = r.db.QueryRowContext(
 		ctx,
-		`SELECT id, telegram_user_id, first_name, last_name, username, created_at, updated_at
+		`SELECT id, user_id, telegram_user_id, first_name, last_name, username, created_at, updated_at
 		   FROM telegram_users
 		  WHERE telegram_user_id = ?
 		  LIMIT 1`,
 		telegramUserID,
-	).Scan(&id, &tgUserID, &firstName, &lastName, &username, &createdAt, &updatedAt)
+	).Scan(&id, &userID, &tgUserID, &firstName, &lastName, &username, &createdAt, &updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -88,6 +92,7 @@ func (r *telegramUsersSQLiteRepo) GetByTelegramUserID(ctx context.Context, teleg
 
 	return &models.TelegramUser{
 		ID:             id,
+		UserID:         nullInt64ToPtr(userID),
 		TelegramUserID: tgUserID,
 		FirstName:      firstName,
 		LastName:       nullStringToPtr(lastName),
@@ -95,6 +100,19 @@ func (r *telegramUsersSQLiteRepo) GetByTelegramUserID(ctx context.Context, teleg
 		CreatedAt:      createdAt,
 		UpdatedAt:      updatedAt,
 	}, nil
+}
+
+func (r *telegramUsersSQLiteRepo) SetUserIDByTelegramUserID(ctx context.Context, telegramUserID int64, userID int64) error {
+	_, err := r.db.ExecContext(
+		ctx,
+		`UPDATE telegram_users SET user_id = ? WHERE telegram_user_id = ?`,
+		userID, telegramUserID,
+	)
+	if err != nil {
+		return errors.Join(ErrSetUserID, err)
+	}
+
+	return nil
 }
 
 // ptrToNullString мапит опциональное поле контракта (*string) в sql.NullString —
@@ -116,4 +134,14 @@ func nullStringToPtr(ns sql.NullString) *string {
 	}
 
 	return &ns.String
+}
+
+// nullInt64ToPtr — для nullable INTEGER колонок (например, user_id).
+// NULL даёт nil, заполненное значение — указатель на копию int64.
+func nullInt64ToPtr(ni sql.NullInt64) *int64 {
+	if !ni.Valid {
+		return nil
+	}
+
+	return &ni.Int64
 }

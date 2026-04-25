@@ -30,6 +30,10 @@ var ErrGetByTelegramUserID = errors.New("telegram_users: get by telegram_user_id
 // Сравнение — через errors.Is(err, ErrNotFound).
 var ErrNotFound = errors.New("telegram_users: not found")
 
+// ErrSetUserID — ошибка проставления связи telegram_users.user_id (например,
+// сбой I/O или нарушение FK на users(id)).
+var ErrSetUserID = errors.New("telegram_users: set user_id")
+
 // Repository — интерфейс доступа к хранилищу telegram_users. Контракт
 // намеренно свободен от деталей конкретной реализации (SQL/файлы/память):
 // опциональные поля представлены через *string, где nil = «значения нет».
@@ -58,4 +62,13 @@ type Repository interface {
 	// обёрнутый ErrGetByTelegramUserID). Вызывающий должен различать эти
 	// случаи через errors.Is(err, ErrNotFound).
 	GetByTelegramUserID(ctx context.Context, telegramUserID int64) (*models.TelegramUser, error)
+
+	// SetUserIDByTelegramUserID проставляет связь telegram_users.user_id для
+	// записи с заданным telegram_user_id. Используется в сценарии привязки
+	// номера: сначала создаётся запись users, затем сюда передаётся её id.
+	// Если записи с таким telegram_user_id нет — UPDATE затронет 0 строк, это
+	// не считается ошибкой (метод возвращает nil); проверка существования
+	// должна быть на стороне вызывающего, если важно. При реальном сбое —
+	// ошибка, обёрнутая ErrSetUserID.
+	SetUserIDByTelegramUserID(ctx context.Context, telegramUserID int64, userID int64) error
 }
