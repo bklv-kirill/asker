@@ -25,6 +25,10 @@ var ErrPhoneTaken = errors.New("users: phone taken")
 // CHECK на уровне БД, если значение не из enum).
 var ErrSetGender = errors.New("users: set gender")
 
+// ErrSetAge — ошибка обновления users.age (сбой I/O или нарушение
+// CHECK на уровне БД, если значение вне диапазона 1..120).
+var ErrSetAge = errors.New("users: set age")
+
 
 // Repository — интерфейс доступа к таблице users. Потребители (хендлеры,
 // сервисы) зависят от этого интерфейса, а не от конкретной реализации.
@@ -44,4 +48,11 @@ type Repository interface {
 	// вызывающий должен проверять существование сам, если важно. При реальном
 	// сбое или нарушении CHECK — ошибка, обёрнутая ErrSetGender.
 	SetGender(ctx context.Context, id int64, gender models.Gender) error
+
+	// SetAge обновляет колонку age для записи с указанным id. Допустимый
+	// диапазон — 1..120 (CHECK в схеме). Валидация — на стороне вызывающего
+	// (хендлер парсит ввод пользователя); БД на нарушение CHECK вернёт
+	// ошибку, обёрнутую ErrSetAge. Если записи с таким id нет — UPDATE
+	// затронет 0 строк, это не считается ошибкой.
+	SetAge(ctx context.Context, id int64, age int) error
 }

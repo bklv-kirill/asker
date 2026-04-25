@@ -63,3 +63,16 @@ func (r *usersSQLiteRepo) SetGender(ctx context.Context, id int64, gender models
 
 	return nil
 }
+
+func (r *usersSQLiteRepo) SetAge(ctx context.Context, id int64, age int) error {
+	_, err := r.db.ExecContext(
+		ctx,
+		`UPDATE users SET age = ? WHERE id = ?`,
+		age, id,
+	)
+	if err != nil {
+		return errors.Join(ErrSetAge, err)
+	}
+
+	return nil
+}
