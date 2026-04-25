@@ -60,6 +60,7 @@ func (t *TelegramBot) handleStart(ctx context.Context, b *bot.Bot, update *model
 	switch {
 		case tgUser != nil && tgUser.UserID != nil:
 			replyText = fmt.Sprintf("👋 Рад тебя снова видеть, %s!\n\nℹ️ Номер телефона уже привязан.", from.FirstName)
+			replyMarkup = profileSettingsKeyboard()
 		case tgUser != nil:
 			replyText = fmt.Sprintf("👋 Рад тебя снова видеть, %s!\n\n📱 Для более точных ответов можешь привязать свой номер телефона и настроить профиль.", from.FirstName)
 			replyMarkup = attachPhoneInlineMarkup()

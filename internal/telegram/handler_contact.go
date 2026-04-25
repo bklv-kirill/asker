@@ -16,11 +16,12 @@ import (
 //   2) Защита: Contact.UserID должен совпадать с From.ID — иначе номер
 //      чужой (например, пересланный контакт), отказываем.
 //   3) Защита: если у этого telegram_users уже есть user_id — отвечаем
-//      «у тебя уже привязан номер» и выходим.
+//      «у тебя уже привязан номер» и оставляем клавиатуру с «Настроить
+//      профиль» (юзер уже считается привязанным).
 //   4) users.Create(FirstName, normalizedPhone). UNIQUE-конфликт по phone
 //      различается через ErrPhoneTaken.
 //   5) telegramUsers.SetUserIDByTelegramUserID — проставляем связь.
-//   6) Ответ «Спасибо! Номер привязан.» с ReplyKeyboardRemove.
+//   6) Ответ «Спасибо! Номер привязан.» с reply-keyboard «Настроить профиль».
 //
 // Все ветки пишут message_out при успешной отправке ответа. Транзакция
 // между шагами 4 и 5 не используется — если 5 упадёт, у нас останется
@@ -47,7 +48,7 @@ func (t *TelegramBot) handleContact(ctx context.Context, b *bot.Bot, update *mod
 	})
 
 	if contact.UserID != from.ID {
-		t.sendContactReply(ctx, b, from, chatID, "⚠️ Нужен твой собственный номер.", false)
+		t.sendContactReply(ctx, b, from, chatID, "⚠️ Нужен твой собственный номер.", nil)
 
 		return
 	}
@@ -58,13 +59,13 @@ func (t *TelegramBot) handleContact(ctx context.Context, b *bot.Bot, update *mod
 		// но если случится реальный сбой — сообщаем юзеру и выходим.
 		t.logger.Error("telegram_users get on contact", "err", err, "telegram_user_id", from.ID)
 
-		t.sendContactReply(ctx, b, from, chatID, "❌ Не получилось сохранить номер. Попробуй позже.", false)
+		t.sendContactReply(ctx, b, from, chatID, "❌ Не получилось сохранить номер. Попробуй позже.", nil)
 
 		return
 	}
 
 	if tgUser.UserID != nil {
-		t.sendContactReply(ctx, b, from, chatID, "ℹ️ У тебя уже привязан номер.", true)
+		t.sendContactReply(ctx, b, from, chatID, "ℹ️ У тебя уже привязан номер.", profileSettingsKeyboard())
 
 		return
 	}
@@ -73,7 +74,7 @@ func (t *TelegramBot) handleContact(ctx context.Context, b *bot.Bot, update *mod
 	if normalizedPhone == "" {
 		// CHECK на users.phone отбросит пустую строку — выясним сразу,
 		// чтобы дать осмысленный ответ.
-		t.sendContactReply(ctx, b, from, chatID, "❌ Не удалось разобрать номер. Попробуй ещё раз.", false)
+		t.sendContactReply(ctx, b, from, chatID, "❌ Не удалось разобрать номер. Попробуй ещё раз.", nil)
 
 		return
 	}
@@ -81,13 +82,13 @@ func (t *TelegramBot) handleContact(ctx context.Context, b *bot.Bot, update *mod
 	newUserID, err := t.users.Create(ctx, from.FirstName, normalizedPhone)
 	if err != nil {
 		if errors.Is(err, usersRepo.ErrPhoneTaken) {
-			t.sendContactReply(ctx, b, from, chatID, "⚠️ Этот номер уже привязан к другому аккаунту.", true)
+			t.sendContactReply(ctx, b, from, chatID, "⚠️ Этот номер уже привязан к другому аккаунту.", models.ReplyKeyboardRemove{RemoveKeyboard: true})
 
 			return
 		}
 
 		t.logger.Error("users create on contact", "err", err, "telegram_user_id", from.ID)
-		t.sendContactReply(ctx, b, from, chatID, "❌ Не получилось сохранить номер. Попробуй позже.", false)
+		t.sendContactReply(ctx, b, from, chatID, "❌ Не получилось сохранить номер. Попробуй позже.", nil)
 
 		return
 	}
@@ -105,7 +106,7 @@ func (t *TelegramBot) handleContact(ctx context.Context, b *bot.Bot, update *mod
 		// на следующем /start он снова нажмёт «Привязать», но users.Create
 		// тогда упадёт с ErrPhoneTaken (его номер уже в users).
 		t.logger.Error("telegram_users set user_id on contact", "err", err, "telegram_user_id", from.ID, "users_id", newUserID)
-		t.sendContactReply(ctx, b, from, chatID, "❌ Не получилось сохранить номер. Попробуй позже.", false)
+		t.sendContactReply(ctx, b, from, chatID, "❌ Не получилось сохранить номер. Попробуй позже.", nil)
 
 		return
 	}
@@ -116,19 +117,15 @@ func (t *TelegramBot) handleContact(ctx context.Context, b *bot.Bot, update *mod
 		"users_id", newUserID,
 	)
 
-	t.sendContactReply(ctx, b, from, chatID, "✅ Спасибо! Номер привязан.", true)
+	t.sendContactReply(ctx, b, from, chatID, "✅ Спасибо! Номер привязан.", profileSettingsKeyboard())
 }
 
 // sendContactReply шлёт ответ на contact_in и пишет message_out в журнал
-// при успехе. Если removeKeyboard=true — отправляет ReplyKeyboardRemove,
-// чтобы убрать висящую кнопку «Поделиться номером»; иначе клавиатура
-// остаётся (для повторной попытки).
-func (t *TelegramBot) sendContactReply(ctx context.Context, b *bot.Bot, from *models.User, chatID int64, text string, removeKeyboard bool) {
-	var replyMarkup any
-	if removeKeyboard {
-		replyMarkup = models.ReplyKeyboardRemove{RemoveKeyboard: true}
-	}
-
+// при успехе. replyMarkup — произвольная клавиатура: nil (оставить
+// текущую — например, request_contact для повторной попытки),
+// models.ReplyKeyboardRemove (снять висящую) или
+// profileSettingsKeyboard() (поставить «Настроить профиль» после привязки).
+func (t *TelegramBot) sendContactReply(ctx context.Context, b *bot.Bot, from *models.User, chatID int64, text string, replyMarkup any) {
 	msg, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      chatID,
 		Text:        text,

@@ -42,6 +42,12 @@ const (
 // ловим через RegisterHandler(HandlerTypeCallbackQueryData, MatchTypeExact).
 const attachPhoneCallbackData = "attach_phone"
 
+// setupProfileButtonText — подпись reply-кнопки «Настроить профиль»,
+// которая появляется у пользователя после привязки номера. Это же
+// значение приходит как Message.Text при нажатии — ловим через
+// RegisterHandler(HandlerTypeMessageText, MatchTypeExact).
+const setupProfileButtonText = "⚙️ Настроить профиль"
+
 // telegramEventPayload — единая плоская структура payload для журнала
 // telegram_events. Опциональные поля помечены omitempty, чтобы в JSON
 // попадали только реально заполненные. Тип события определяется полем Event;
@@ -99,6 +105,7 @@ func (t *TelegramBot) Start(ctx context.Context) error {
 	}
 
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, t.handleStart)
+	b.RegisterHandler(bot.HandlerTypeMessageText, setupProfileButtonText, bot.MatchTypeExact, t.handleSetupProfile)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, attachPhoneCallbackData, bot.MatchTypeExact, t.handleAttachPhone)
 	b.RegisterHandlerMatchFunc(matchMessageContact, t.handleContact)
 
@@ -181,6 +188,23 @@ func (t *TelegramBot) LogTelegramEvent(ctx context.Context, from *models.User, p
 		"telegram_user_id", from.ID,
 		"event", payload.Event,
 	)
+}
+
+// profileSettingsKeyboard собирает persistent reply-клавиатуру с одной
+// кнопкой «Настроить профиль». Используется для уже-привязанных юзеров —
+// после первичной привязки номера и при /start, чтобы клавиатура не
+// исчезала. IsPersistent=true просит TG не сворачивать её, ResizeKeyboard
+// уменьшает высоту.
+func profileSettingsKeyboard() models.ReplyKeyboardMarkup {
+	return models.ReplyKeyboardMarkup{
+		Keyboard: [][]models.KeyboardButton{
+			{
+				{Text: setupProfileButtonText},
+			},
+		},
+		IsPersistent:   true,
+		ResizeKeyboard: true,
+	}
 }
 
 // optionalString отличает «TG не прислал поле» от «прислал, но пусто»: в
