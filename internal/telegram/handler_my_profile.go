@@ -99,6 +99,10 @@ func (t *TelegramBot) sendMyProfileReply(ctx context.Context, b *bot.Bot, from *
 }
 
 // formatMyProfile собирает HTML-сообщение со всеми полями профиля.
+// Структура: жирный заголовок, затем список полей (эмодзи-маркер + жирный
+// label + значение); телефон в `<code>` — моно-шрифт читается аккуратнее
+// плоского текста; «о себе» вынесено в `<blockquote>` отдельной секцией,
+// потому что текст свободный и многострочный, в общий список не лезет.
 // Свободные строки (имя, инфо, gender) экранируются через html.EscapeString —
 // юзер мог написать `<` или `&` в «о себе», иначе TG отвалит ParseMode.
 // Phone хранится только цифрами (CHECK), age — int, gender — enum: им
@@ -107,25 +111,54 @@ func formatMyProfile(u *models.User) string {
 	var lines []string = []string{
 		"<b>👤 Твой профиль</b>",
 		"",
-		"Имя: " + formatProfileField(u.Name, html.EscapeString),
-		"Телефон: " + html.EscapeString(u.Phone),
-		"Пол: " + formatProfileField(u.Gender, func(g models.Gender) string { return html.EscapeString(string(g)) }),
-		"Возраст: " + formatProfileField(u.Age, strconv.Itoa),
-		"О себе: " + formatProfileField(u.Info, html.EscapeString),
+		"🪪 <b>Имя:</b> " + formatProfileField(u.Name, html.EscapeString),
+		"📱 <b>Телефон:</b> <code>" + html.EscapeString(u.Phone) + "</code>",
+		"⚧ <b>Пол:</b> " + formatProfileField(u.Gender, formatGenderWithEmoji),
+		"🎂 <b>Возраст:</b> " + formatProfileField(u.Age, strconv.Itoa),
+		"",
+		"✏️ <b>О себе:</b>",
+		formatInfoBlock(u.Info),
 	}
 
 	return strings.Join(lines, "\n")
 }
 
 // formatProfileField — generic-хелпер для опциональных полей профиля.
-// nil → «не указано»; иначе значение прогоняется через format-функцию
+// nil → курсивное «<i>не указано</i>» (визуально отделяет пропущенные
+// поля от заполненных); иначе значение прогоняется через format-функцию
 // (для строк — html.EscapeString, для int — strconv.Itoa, для enum'ов —
-// adapter с конвертацией). Отделяет «отсутствие значения» от «как форматировать
-// значение» — последнее решает caller, плейсхолдер фиксирован.
+// adapter с конвертацией).
 func formatProfileField[T any](p *T, format func(T) string) string {
 	if p == nil {
-		return "не указано"
+		return "<i>не указано</i>"
 	}
 
 	return format(*p)
+}
+
+// formatGenderWithEmoji подмешивает иконку перед русским значением gender'а.
+// Для известных констант (мужчина/женщина) — соответствующий символ;
+// неизвестное значение (теоретически возможно, если в БД оказалась левая
+// строка вне CHECK) выводится без эмодзи.
+func formatGenderWithEmoji(g models.Gender) string {
+	switch g {
+	case models.GenderMale:
+		return "👨 " + html.EscapeString(string(g))
+	case models.GenderFemale:
+		return "👩 " + html.EscapeString(string(g))
+	}
+
+	return html.EscapeString(string(g))
+}
+
+// formatInfoBlock — отдельный хелпер для info, потому что обёртка отличается
+// от обычных полей: заполненный текст оборачивается в <blockquote> (TG рисует
+// его серой полосой слева, читается как цитата), пустое значение — обычный
+// курсивный плейсхолдер без блока.
+func formatInfoBlock(p *string) string {
+	if p == nil {
+		return "<i>не указано</i>"
+	}
+
+	return "<blockquote>" + html.EscapeString(*p) + "</blockquote>"
 }
