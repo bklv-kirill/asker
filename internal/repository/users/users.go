@@ -6,6 +6,8 @@ package usersRepo
 import (
 	"context"
 	"errors"
+
+	"github.com/bklv-kirill/asker/internal/models"
 )
 
 // ErrCreate — ошибка вставки строки в users. Оборачивается причиной через
@@ -19,6 +21,11 @@ var ErrCreate = errors.New("users: create")
 // без string-match.
 var ErrPhoneTaken = errors.New("users: phone taken")
 
+// ErrSetGender — ошибка обновления users.gender (сбой I/O или нарушение
+// CHECK на уровне БД, если значение не из enum).
+var ErrSetGender = errors.New("users: set gender")
+
+
 // Repository — интерфейс доступа к таблице users. Потребители (хендлеры,
 // сервисы) зависят от этого интерфейса, а не от конкретной реализации.
 type Repository interface {
@@ -29,4 +36,12 @@ type Repository interface {
 	// Остальные поля профиля (gender, age, info) опциональны — на момент создания
 	// они NULL, заполняются позже отдельными методами.
 	Create(ctx context.Context, name, phone string) (int64, error)
+
+	// SetGender обновляет колонку gender для записи с указанным id. Допустимые
+	// значения — константы models.GenderMale / models.GenderFemale
+	// (соответствуют CHECK в схеме). Если запись с таким id отсутствует —
+	// UPDATE затронет 0 строк, это не считается ошибкой (метод возвращает nil);
+	// вызывающий должен проверять существование сам, если важно. При реальном
+	// сбое или нарушении CHECK — ошибка, обёрнутая ErrSetGender.
+	SetGender(ctx context.Context, id int64, gender models.Gender) error
 }

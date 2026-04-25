@@ -6,6 +6,8 @@ import (
 	"errors"
 
 	"github.com/mattn/go-sqlite3"
+
+	"github.com/bklv-kirill/asker/internal/models"
 )
 
 type usersSQLiteRepo struct {
@@ -44,4 +46,20 @@ func (r *usersSQLiteRepo) Create(ctx context.Context, name, phone string) (int64
 	}
 
 	return id, nil
+}
+
+func (r *usersSQLiteRepo) SetGender(ctx context.Context, id int64, gender models.Gender) error {
+	// Явная конвертация в string: database/sql драйверы маппят базовые
+	// kinds (string/int/...), а named-type Gender напрямую могут не понять
+	// без driver.Valuer.
+	_, err := r.db.ExecContext(
+		ctx,
+		`UPDATE users SET gender = ? WHERE id = ?`,
+		string(gender), id,
+	)
+	if err != nil {
+		return errors.Join(ErrSetGender, err)
+	}
+
+	return nil
 }
