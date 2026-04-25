@@ -43,11 +43,15 @@ const (
 // ловим через RegisterHandler(HandlerTypeCallbackQueryData, MatchTypeExact).
 const attachPhoneCallbackData = "attach_phone"
 
-// setupProfileButtonText — подпись reply-кнопки «Настроить профиль»,
-// которая появляется у пользователя после привязки номера. Это же
-// значение приходит как Message.Text при нажатии — ловим через
-// RegisterHandler(HandlerTypeMessageText, MatchTypeExact).
-const setupProfileButtonText = "⚙️ Настроить профиль"
+// setupProfileButtonText / myProfileButtonText — подписи reply-кнопок
+// клавиатуры профиля (показывается уже-привязанным юзерам). Эти же значения
+// приходят как Message.Text при нажатии — ловим через
+// RegisterHandler(HandlerTypeMessageText, MatchTypeExact). Кнопки лежат
+// в profileSettingsKeyboard, по одной в строке для удобного тапа.
+const (
+	setupProfileButtonText = "⚙️ Настроить профиль"
+	myProfileButtonText    = "👤 Мой профиль"
+)
 
 // callback_data inline-кнопок меню «Настроить профиль». Каждая
 // регистрируется отдельным RegisterHandler с MatchTypeExact: gender
@@ -182,6 +186,7 @@ func (t *TelegramBot) Start(ctx context.Context) error {
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, t.handleStart)
 
 	b.RegisterHandler(bot.HandlerTypeMessageText, setupProfileButtonText, bot.MatchTypeExact, t.handleSetupProfile)
+	b.RegisterHandler(bot.HandlerTypeMessageText, myProfileButtonText, bot.MatchTypeExact, t.handleMyProfile)
 
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, attachPhoneCallbackData, bot.MatchTypeExact, t.handleAttachPhone)
 
@@ -291,16 +296,20 @@ func (t *TelegramBot) LogTelegramEvent(ctx context.Context, from *models.User, p
 	)
 }
 
-// profileSettingsKeyboard собирает persistent reply-клавиатуру с одной
-// кнопкой «Настроить профиль». Используется для уже-привязанных юзеров —
-// после первичной привязки номера и при /start, чтобы клавиатура не
-// исчезала. IsPersistent=true просит TG не сворачивать её, ResizeKeyboard
-// уменьшает высоту.
+// profileSettingsKeyboard собирает persistent reply-клавиатуру с двумя
+// кнопками — «Настроить профиль» и «Мой профиль» (по одной в строке для
+// удобного тапа на узких экранах). Используется для уже-привязанных
+// юзеров — после первичной привязки номера и при /start, чтобы клавиатура
+// не исчезала. IsPersistent=true просит TG не сворачивать её,
+// ResizeKeyboard уменьшает высоту.
 func profileSettingsKeyboard() models.ReplyKeyboardMarkup {
 	return models.ReplyKeyboardMarkup{
 		Keyboard: [][]models.KeyboardButton{
 			{
 				{Text: setupProfileButtonText},
+			},
+			{
+				{Text: myProfileButtonText},
 			},
 		},
 		IsPersistent:   true,

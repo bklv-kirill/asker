@@ -34,6 +34,15 @@ var ErrSetAge = errors.New("users: set age")
 // вызывающего хендлера.
 var ErrSetInfo = errors.New("users: set info")
 
+// ErrGetByID — ошибка чтения строки users по id (сбой I/O или сканирования).
+// «Не найдено» — отдельный sentinel ErrNotFound, чтобы вызывающий мог
+// различать «нет записи» и «БД упала».
+var ErrGetByID = errors.New("users: get by id")
+
+// ErrNotFound — запись с указанным id отсутствует. Возвращается в чистом
+// виде (без errors.Join), потребитель сравнивает через errors.Is.
+var ErrNotFound = errors.New("users: not found")
+
 // Repository — интерфейс доступа к таблице users. Потребители (хендлеры,
 // сервисы) зависят от этого интерфейса, а не от конкретной реализации.
 type Repository interface {
@@ -65,4 +74,10 @@ type Repository interface {
 	// вызывающий. Если записи с таким id нет — UPDATE затронет 0 строк,
 	// это не считается ошибкой. При сбое I/O — ошибка, обёрнутая ErrSetInfo.
 	SetInfo(ctx context.Context, id int64, info string) error
+
+	// GetByID возвращает запись users по внутреннему id. «Не найдено» —
+	// ErrNotFound (без обёртки), сбой I/O/сканирования — обёрнутая
+	// ErrGetByID. Опциональные колонки (name, gender, age, info) маппятся
+	// в указатели — nil означает NULL.
+	GetByID(ctx context.Context, id int64) (*models.User, error)
 }

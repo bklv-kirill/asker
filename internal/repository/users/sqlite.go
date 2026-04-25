@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/mattn/go-sqlite3"
 
@@ -88,4 +89,79 @@ func (r *usersSQLiteRepo) SetInfo(ctx context.Context, id int64, info string) er
 	}
 
 	return nil
+}
+
+func (r *usersSQLiteRepo) GetByID(ctx context.Context, id int64) (*models.User, error) {
+	var (
+		userID    int64
+		name      sql.NullString
+		gender    sql.NullString
+		age       sql.NullInt64
+		info      sql.NullString
+		phone     string
+		createdAt time.Time
+		updatedAt time.Time
+	)
+	var err error = r.db.QueryRowContext(
+		ctx,
+		`SELECT id, name, gender, age, info, phone, created_at, updated_at
+		   FROM users
+		  WHERE id = ?
+		  LIMIT 1`,
+		id,
+	).Scan(&userID, &name, &gender, &age, &info, &phone, &createdAt, &updatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, errors.Join(ErrGetByID, err)
+	}
+
+	return &models.User{
+		ID:        userID,
+		Name:      nullStringToPtr(name),
+		Gender:    nullStringToGenderPtr(gender),
+		Age:       nullInt64ToIntPtr(age),
+		Info:      nullStringToPtr(info),
+		Phone:     phone,
+		CreatedAt: createdAt,
+		UpdatedAt: updatedAt,
+	}, nil
+}
+
+// nullStringToPtr — NULL → nil, заполненная строка → указатель на копию.
+// Локальная копия (для package-level state-share не годится — телефонная
+// модель использует разные мапперы по типам колонок).
+func nullStringToPtr(ns sql.NullString) *string {
+	if !ns.Valid {
+		return nil
+	}
+
+	return &ns.String
+}
+
+// nullStringToGenderPtr — для users.gender (TEXT с CHECK enum'ом). NULL даёт
+// nil, заполненное значение — указатель на models.Gender (named-type над
+// string), что сохраняет типизацию на уровне модели.
+func nullStringToGenderPtr(ns sql.NullString) *models.Gender {
+	if !ns.Valid {
+		return nil
+	}
+
+	var g models.Gender = models.Gender(ns.String)
+
+	return &g
+}
+
+// nullInt64ToIntPtr — для users.age (INTEGER 1..120). NULL даёт nil,
+// заполненное значение — указатель на int (домен `models.User.Age` — int,
+// не int64).
+func nullInt64ToIntPtr(ni sql.NullInt64) *int {
+	if !ni.Valid {
+		return nil
+	}
+
+	var v int = int(ni.Int64)
+
+	return &v
 }
