@@ -38,6 +38,8 @@ func (t *TelegramBot) handleContact(ctx context.Context, b *bot.Bot, update *mod
 	var contact *models.Contact = update.Message.Contact
 	var inMessageID int64 = int64(update.Message.ID)
 
+	t.clearPendingProfileField(from.ID)
+
 	t.CreateNewTelegramUserIfNotExists(ctx, from)
 
 	t.LogTelegramEvent(ctx, from, telegramEventPayload{

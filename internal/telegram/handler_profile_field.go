@@ -25,6 +25,8 @@ func (t *TelegramBot) handleProfileField(ctx context.Context, b *bot.Bot, update
 	var query *models.CallbackQuery = update.CallbackQuery
 	var from *models.User = &query.From
 
+	t.clearPendingProfileField(from.ID)
+
 	var chatID int64
 	var sourceMessageID int
 	if query.Message.Message != nil {

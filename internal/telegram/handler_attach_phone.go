@@ -24,6 +24,8 @@ func (t *TelegramBot) handleAttachPhone(ctx context.Context, b *bot.Bot, update 
 	var query *models.CallbackQuery = update.CallbackQuery
 	var from *models.User = &query.From
 
+	t.clearPendingProfileField(from.ID)
+
 	// chat_id и message_id из исходного сообщения с inline-кнопкой —
 	// они нужны и для EditMessageReplyMarkup, и для нового SendMessage.
 	// Поле Message в callback может быть либо обычным сообщением (Message),

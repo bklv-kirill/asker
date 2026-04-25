@@ -32,6 +32,8 @@ func (t *TelegramBot) handleStart(ctx context.Context, b *bot.Bot, update *model
 	var inText string = update.Message.Text
 	var inMessageID int64 = int64(update.Message.ID)
 
+	t.clearPendingProfileField(from.ID)
+
 	// Сначала пробуем достать существующую запись — она нужна, чтобы
 	// различить «новый», «возвратившийся без номера» и «возвратившийся
 	// с привязанным номером». Ошибка ErrNotFound — валидное состояние
