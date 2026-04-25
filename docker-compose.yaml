@@ -8,6 +8,7 @@ services:
     volumes:
       - ./:/app
       - ./data:/data
+      - ./prompts:/prompts:ro
       - go_mod_cache:/go/pkg/mod
     environment:
       APP_NAME: ${APP_NAME}
@@ -17,6 +18,13 @@ services:
       HTTP_PROXY: ${HTTP_PROXY}
       HTTPS_PROXY: ${HTTPS_PROXY}
       NO_PROXY: ${NO_PROXY}
+      AI_ENABLED: ${AI_ENABLED}
+      AI_PROVIDER: ${AI_PROVIDER}
+      AI_MODEL: ${AI_MODEL}
+      AI_API_KEY: ${AI_API_KEY}
+      AI_SYSTEM_PROMPT_PATH: ${AI_SYSTEM_PROMPT_PATH}
+      AI_TIMEOUT_SEC: ${AI_TIMEOUT_SEC}
+      AI_HISTORY_LIMIT: ${AI_HISTORY_LIMIT}
     networks:
       - app
 
