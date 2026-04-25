@@ -11,6 +11,7 @@ import (
 	"github.com/bklv-kirill/asker/internal/config"
 	telegramEventsRepo "github.com/bklv-kirill/asker/internal/repository/telegram_events"
 	telegramUsersRepo "github.com/bklv-kirill/asker/internal/repository/telegram_users"
+	usersRepo "github.com/bklv-kirill/asker/internal/repository/users"
 	"github.com/bklv-kirill/asker/internal/storage/sqlite"
 	"github.com/bklv-kirill/asker/internal/telegram"
 )
@@ -34,6 +35,7 @@ func main() {
 		}
 	}()
 
+	var users usersRepo.Repository = usersRepo.NewUsersSQLiteRepo(db)
 	var telegramUsers telegramUsersRepo.Repository = telegramUsersRepo.NewTelegramUsersSQLiteRepo(db)
 	var telegramEvents telegramEventsRepo.Repository = telegramEventsRepo.NewTelegramEventsSQLiteRepo(db)
 
@@ -43,6 +45,7 @@ func main() {
 
 		logger,
 
+		users,
 		telegramUsers,
 		telegramEvents,
 	)

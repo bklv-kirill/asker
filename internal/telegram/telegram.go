@@ -5,7 +5,8 @@
 // (например, handler_start.go) как приватный метод *TelegramBot. Регистрация всех
 // обработчиков выполняется в Start. В telegram.go, помимо типа/конструктора/Start,
 // живут доменные методы *TelegramBot, переиспользуемые несколькими хендлерами
-// (например, CreateNewTelegramUserIfNotExists).
+// (например, CreateNewTelegramUserIfNotExists, LogTelegramEvent), а также
+// общие константы (типы событий журнала, callback-data) и хелперы.
 package telegram
 
 import (
@@ -13,29 +14,39 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"strings"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
 	telegramEventsRepo "github.com/bklv-kirill/asker/internal/repository/telegram_events"
 	telegramUsersRepo "github.com/bklv-kirill/asker/internal/repository/telegram_users"
+	usersRepo "github.com/bklv-kirill/asker/internal/repository/users"
 )
 
 var ErrInitBot = errors.New("telegram: init bot")
 
 // Типы событий журнала telegram_events. Команда логируется одним событием
-// типа eventCommandIn (а не парой command_in + message_in).
+// типа eventCommandIn (а не парой command_in + message_in). Для contact_in
+// в поле Text payload'а пишется сырой Contact.PhoneNumber от TG.
 const (
 	eventCommandIn  = "command_in"
 	eventMessageIn  = "message_in"
 	eventMessageOut = "message_out"
+	eventCallbackIn = "callback_in"
+	eventContactIn  = "contact_in"
 )
+
+// attachPhoneCallbackData — значение callback_data для inline-кнопки
+// «Привязать номер». При нажатии TG присылает CallbackQuery с этим data —
+// ловим через RegisterHandler(HandlerTypeCallbackQueryData, MatchTypeExact).
+const attachPhoneCallbackData = "attach_phone"
 
 // telegramEventPayload — единая плоская структура payload для журнала
 // telegram_events. Опциональные поля помечены omitempty, чтобы в JSON
 // попадали только реально заполненные. Тип события определяется полем Event;
-// сама строка команды (например, "/start") живёт в Text — отдельное поле
-// Command не нужно, оно дублировало бы Text при текущем наборе команд.
+// сама строка команды (например, "/start"), эхо-текст или сырой номер
+// контакта (Contact.PhoneNumber) — всё кладётся в Text.
 //
 // Структура приватная: схема событий — деталь продьюсера (этого пакета),
 // репозиторий хранит сырой JSON. Если позже понадобится разбирать payload
@@ -53,6 +64,7 @@ type TelegramBot struct {
 
 	logger *slog.Logger
 
+	users          usersRepo.Repository
 	telegramUsers  telegramUsersRepo.Repository
 	telegramEvents telegramEventsRepo.Repository
 }
@@ -62,6 +74,7 @@ func NewTelegramBot(
 
 	logger *slog.Logger,
 
+	users usersRepo.Repository,
 	telegramUsers telegramUsersRepo.Repository,
 	telegramEvents telegramEventsRepo.Repository,
 ) *TelegramBot {
@@ -71,6 +84,7 @@ func NewTelegramBot(
 
 		logger: logger,
 
+		users:          users,
 		telegramUsers:  telegramUsers,
 		telegramEvents: telegramEvents,
 	}
@@ -85,10 +99,20 @@ func (t *TelegramBot) Start(ctx context.Context) error {
 	}
 
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, t.handleStart)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, attachPhoneCallbackData, bot.MatchTypeExact, t.handleAttachPhone)
+	b.RegisterHandlerMatchFunc(matchMessageContact, t.handleContact)
 
 	b.Start(ctx)
 
 	return nil
+}
+
+// matchMessageContact срабатывает на любое сообщение, в котором есть
+// поле Contact (пользователь поделился номером через кнопку
+// request_contact). Default-хендлер (handleEcho) на такие апдейты не
+// сработает — RegisterHandlerMatchFunc проверяется раньше дефолтного.
+func matchMessageContact(update *models.Update) bool {
+	return update.Message != nil && update.Message.Contact != nil
 }
 
 // CreateNewTelegramUserIfNotExists сохраняет запись о TG-аккаунте в telegram_users,
@@ -154,8 +178,8 @@ func (t *TelegramBot) LogTelegramEvent(ctx context.Context, from *models.User, p
 
 	t.logger.Info("telegram_events created",
 		"id", id,
-		"event", payload.Event,
 		"telegram_user_id", from.ID,
+		"event", payload.Event,
 	)
 }
 
@@ -168,4 +192,18 @@ func optionalString(s string) *string {
 	}
 
 	return &s
+}
+
+// normalizePhone оставляет в строке только цифры. Contact.PhoneNumber от
+// Telegram обычно приходит в формате "79991234567", но иногда содержит
+// "+", пробелы или скобки — приводим к виду, который пройдёт CHECK на
+// users.phone (length > 0 AND NOT GLOB '*[^0-9]*').
+func normalizePhone(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+
+		return -1
+	}, s)
 }
