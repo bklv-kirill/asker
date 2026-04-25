@@ -7,12 +7,12 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-// handleProfileField — общая заглушка для всех inline-кнопок меню
-// «Настроить профиль» (callback_data с префиксом profileFieldCallbackPrefix).
-// Зарегистрирован одним RegisterHandler с MatchTypePrefix; конкретное
-// поле определяется по query.Data, но пока на все три — единый ответ
-// «В разработке». Когда придёт реализация — разнесём по отдельным
-// хендлерам или добавим switch по query.Data.
+// handleProfileField — заглушка для оставшихся inline-кнопок меню
+// «Настроить профиль» (profile_set_age и profile_set_info). Каждая
+// регистрируется отдельным RegisterHandler с MatchTypeExact; gender
+// уже имеет свой реальный хендлер handleProfileSetGender и сюда не
+// приходит. Когда у age/info появится реальная логика — заведём
+// отдельные хендлеры по аналогии.
 //
 // Шаги: AnswerCallbackQuery (убирает спиннер), журнал callback_in
 // (Text = query.Data, чтобы в БД было видно, какое поле жали),

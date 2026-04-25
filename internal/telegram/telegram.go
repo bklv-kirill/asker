@@ -48,19 +48,25 @@ const attachPhoneCallbackData = "attach_phone"
 // RegisterHandler(HandlerTypeMessageText, MatchTypeExact).
 const setupProfileButtonText = "⚙️ Настроить профиль"
 
-// profileFieldCallbackPrefix — общий префикс для callback_data всех
-// inline-кнопок меню «Настроить профиль». Регистрируется одним
-// RegisterHandler(HandlerTypeCallbackQueryData, MatchTypePrefix) с
-// общим хендлером handleProfileField — пока все три кнопки отвечают
-// одной заглушкой, поэтому отдельных хендлеров под каждую не нужно.
-// Когда придёт реализация — разделим по конкретному data в самом хендлере
-// или разнесём на отдельные регистрации.
-const profileFieldCallbackPrefix = "profile_set_"
-
+// callback_data inline-кнопок меню «Настроить профиль». Каждая
+// регистрируется отдельным RegisterHandler с MatchTypeExact, чтобы
+// обеспечить независимый роутинг (gender уже имеет свой хендлер с реальной
+// логикой; age/info остаются заглушками handleProfileField).
 const (
 	profileSetGenderCallback = "profile_set_gender"
 	profileSetAgeCallback    = "profile_set_age"
 	profileSetInfoCallback   = "profile_set_info"
+)
+
+// callback_data inline-кнопок выбора пола (вторая ступень меню,
+// открываемая по profile_set_gender). Регистрируются одним
+// RegisterHandler через MatchTypePrefix profileGenderCallbackPrefix —
+// общий хендлер handleProfileGender различает значение по query.Data.
+const profileGenderCallbackPrefix = "profile_gender_"
+
+const (
+	profileGenderMaleCallback   = "profile_gender_male"
+	profileGenderFemaleCallback = "profile_gender_female"
 )
 
 // telegramEventPayload — единая плоская структура payload для журнала
@@ -120,9 +126,17 @@ func (t *TelegramBot) Start(ctx context.Context) error {
 	}
 
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, t.handleStart)
+
 	b.RegisterHandler(bot.HandlerTypeMessageText, setupProfileButtonText, bot.MatchTypeExact, t.handleSetupProfile)
+
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, attachPhoneCallbackData, bot.MatchTypeExact, t.handleAttachPhone)
-	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, profileFieldCallbackPrefix, bot.MatchTypePrefix, t.handleProfileField)
+
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, profileSetGenderCallback, bot.MatchTypeExact, t.handleProfileSetGender)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, profileGenderCallbackPrefix, bot.MatchTypePrefix, t.handleProfileGender)
+
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, profileSetAgeCallback, bot.MatchTypeExact, t.handleProfileField)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, profileSetInfoCallback, bot.MatchTypeExact, t.handleProfileField)
+
 	b.RegisterHandlerMatchFunc(matchMessageContact, t.handleContact)
 
 	b.Start(ctx)
@@ -225,9 +239,7 @@ func profileSettingsKeyboard() models.ReplyKeyboardMarkup {
 
 // profileFieldsInlineMarkup собирает inline-клавиатуру меню «Настроить
 // профиль» — три кнопки на каждое поле доменного users (gender / age /
-// info), каждая в своей строке для лучшего UX. callback_data всех кнопок
-// начинается с profileFieldCallbackPrefix — все ловятся одним
-// handleProfileField.
+// info), каждая в своей строке для лучшего UX.
 func profileFieldsInlineMarkup() models.InlineKeyboardMarkup {
 	return models.InlineKeyboardMarkup{
 		InlineKeyboard: [][]models.InlineKeyboardButton{
@@ -239,6 +251,23 @@ func profileFieldsInlineMarkup() models.InlineKeyboardMarkup {
 			},
 			{
 				{Text: "✏️ Рассказать о себе", CallbackData: profileSetInfoCallback},
+			},
+		},
+	}
+}
+
+// profileGenderInlineMarkup — вторая ступень меню «Настроить профиль» под
+// «Указать пол»: две кнопки в одну строку для компактности. Подписи
+// согласованы со значениями users.gender (CHECK 'мужчина'/'женщина'),
+// чтобы юзеру не казалось, что варианты не совпадают с тем, что попадёт
+// в БД. callback_data — отдельный префикс profile_gender_, чтобы общий
+// handleProfileGender различил их.
+func profileGenderInlineMarkup() models.InlineKeyboardMarkup {
+	return models.InlineKeyboardMarkup{
+		InlineKeyboard: [][]models.InlineKeyboardButton{
+			{
+				{Text: "👨 Мужчина", CallbackData: profileGenderMaleCallback},
+				{Text: "👩 Женщина", CallbackData: profileGenderFemaleCallback},
 			},
 		},
 	}
