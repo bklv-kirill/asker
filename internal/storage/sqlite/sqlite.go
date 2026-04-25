@@ -17,8 +17,19 @@ import (
 // При любой ошибке — panic: без валидного хранилища приложение не должно
 // стартовать (консистентно с контрактом config.Load). При неудаче ping
 // соединение закрывается перед паникой, чтобы не оставлять висящих дескрипторов.
+//
+// _foreign_keys=on (DSN-параметр mattn/go-sqlite3) включает PRAGMA
+// foreign_keys на каждом новом соединении пула. Без этого FK-ограничения
+// (`telegram_events.telegram_user_id → telegram_users(id)`,
+// `telegram_users.user_id → users(id)`) висят в схеме как декларация и не
+// enforce'ятся в рантайме. Параметр должен ставиться через DSN, а не через
+// `db.Exec("PRAGMA foreign_keys = ON")` после Open: PRAGMA в SQLite живёт
+// на уровне соединения, а database/sql пулит соединения — Exec затронет
+// только одно случайное.
 func New(cfg *config.Config, logger *slog.Logger) *sql.DB {
-	db, err := sql.Open("sqlite3", cfg.DBPath)
+	var dsn string = cfg.DBPath + "?_foreign_keys=on"
+
+	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		panic(fmt.Errorf("sqlite: open %s: %w", cfg.DBPath, err))
 	}
