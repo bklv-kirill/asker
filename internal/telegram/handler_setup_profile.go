@@ -7,11 +7,11 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-// handleSetupProfile — заглушка для reply-кнопки «Настроить профиль».
-// Кнопка появляется у пользователя после успешной привязки номера и шлёт
-// при нажатии обычное Message.Text с подписью кнопки. Реализация формы
-// настройки профиля (gender/age/info) — в отдельной фазе; пока просто
-// сообщаем «в разработке» и оставляем клавиатуру висеть.
+// handleSetupProfile срабатывает на нажатие persistent reply-кнопки
+// «Настроить профиль» (Message.Text совпадает с setupProfileButtonText).
+// Шлёт сообщение-меню с inline-кнопками выбора поля для редактирования
+// (пол / возраст / о себе). Сами действия за каждой кнопкой пока заглушка —
+// см. handler_profile_field.go.
 func (t *TelegramBot) handleSetupProfile(ctx context.Context, b *bot.Bot, update *models.Update) {
 	if update.Message == nil || update.Message.From == nil {
 		return
@@ -31,10 +31,11 @@ func (t *TelegramBot) handleSetupProfile(ctx context.Context, b *bot.Bot, update
 		Text:              inText,
 	})
 
-	var replyText string = "🚧 В разработке..."
+	var replyText string = "⚙️ Что хочешь настроить?"
 	msg, err := b.SendMessage(ctx, &bot.SendMessageParams{
-		ChatID: chatID,
-		Text:   replyText,
+		ChatID:      chatID,
+		Text:        replyText,
+		ReplyMarkup: profileFieldsInlineMarkup(),
 	})
 	if err != nil {
 		t.logger.Error("send setup_profile reply", "err", err, "chat_id", chatID)

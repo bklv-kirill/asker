@@ -48,6 +48,21 @@ const attachPhoneCallbackData = "attach_phone"
 // RegisterHandler(HandlerTypeMessageText, MatchTypeExact).
 const setupProfileButtonText = "⚙️ Настроить профиль"
 
+// profileFieldCallbackPrefix — общий префикс для callback_data всех
+// inline-кнопок меню «Настроить профиль». Регистрируется одним
+// RegisterHandler(HandlerTypeCallbackQueryData, MatchTypePrefix) с
+// общим хендлером handleProfileField — пока все три кнопки отвечают
+// одной заглушкой, поэтому отдельных хендлеров под каждую не нужно.
+// Когда придёт реализация — разделим по конкретному data в самом хендлере
+// или разнесём на отдельные регистрации.
+const profileFieldCallbackPrefix = "profile_set_"
+
+const (
+	profileSetGenderCallback = "profile_set_gender"
+	profileSetAgeCallback    = "profile_set_age"
+	profileSetInfoCallback   = "profile_set_info"
+)
+
 // telegramEventPayload — единая плоская структура payload для журнала
 // telegram_events. Опциональные поля помечены omitempty, чтобы в JSON
 // попадали только реально заполненные. Тип события определяется полем Event;
@@ -107,6 +122,7 @@ func (t *TelegramBot) Start(ctx context.Context) error {
 	b.RegisterHandler(bot.HandlerTypeMessageText, "/start", bot.MatchTypeExact, t.handleStart)
 	b.RegisterHandler(bot.HandlerTypeMessageText, setupProfileButtonText, bot.MatchTypeExact, t.handleSetupProfile)
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, attachPhoneCallbackData, bot.MatchTypeExact, t.handleAttachPhone)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, profileFieldCallbackPrefix, bot.MatchTypePrefix, t.handleProfileField)
 	b.RegisterHandlerMatchFunc(matchMessageContact, t.handleContact)
 
 	b.Start(ctx)
@@ -204,6 +220,27 @@ func profileSettingsKeyboard() models.ReplyKeyboardMarkup {
 		},
 		IsPersistent:   true,
 		ResizeKeyboard: true,
+	}
+}
+
+// profileFieldsInlineMarkup собирает inline-клавиатуру меню «Настроить
+// профиль» — три кнопки на каждое поле доменного users (gender / age /
+// info), каждая в своей строке для лучшего UX. callback_data всех кнопок
+// начинается с profileFieldCallbackPrefix — все ловятся одним
+// handleProfileField.
+func profileFieldsInlineMarkup() models.InlineKeyboardMarkup {
+	return models.InlineKeyboardMarkup{
+		InlineKeyboard: [][]models.InlineKeyboardButton{
+			{
+				{Text: "👤 Указать пол", CallbackData: profileSetGenderCallback},
+			},
+			{
+				{Text: "🎂 Указать возраст", CallbackData: profileSetAgeCallback},
+			},
+			{
+				{Text: "✏️ Рассказать о себе", CallbackData: profileSetInfoCallback},
+			},
+		},
 	}
 }
 
