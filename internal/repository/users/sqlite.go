@@ -17,8 +17,12 @@ func NewUsersSQLiteRepo(db *sql.DB) Repository {
 	return &usersSQLiteRepo{db: db}
 }
 
-func (r *usersSQLiteRepo) Create(ctx context.Context, name string) (int64, error) {
-	result, err := r.db.ExecContext(ctx, `INSERT INTO users (name) VALUES (?)`, name)
+func (r *usersSQLiteRepo) Create(ctx context.Context, name, phone string) (int64, error) {
+	result, err := r.db.ExecContext(
+		ctx,
+		`INSERT INTO users (name, phone) VALUES (?, ?)`,
+		name, phone,
+	)
 	if err != nil {
 		return 0, errors.Join(ErrCreate, err)
 	}
