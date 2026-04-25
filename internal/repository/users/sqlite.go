@@ -76,3 +76,16 @@ func (r *usersSQLiteRepo) SetAge(ctx context.Context, id int64, age int) error {
 
 	return nil
 }
+
+func (r *usersSQLiteRepo) SetInfo(ctx context.Context, id int64, info string) error {
+	_, err := r.db.ExecContext(
+		ctx,
+		`UPDATE users SET info = ? WHERE id = ?`,
+		info, id,
+	)
+	if err != nil {
+		return errors.Join(ErrSetInfo, err)
+	}
+
+	return nil
+}

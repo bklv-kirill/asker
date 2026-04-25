@@ -24,7 +24,7 @@ func (t *TelegramBot) handleProfileSetGender(ctx context.Context, b *bot.Bot, up
 	var query *models.CallbackQuery = update.CallbackQuery
 	var from *models.User = &query.From
 
-	t.clearPendingProfileField(from.ID)
+	t.clearPendingInput(from.ID)
 
 	var chatID int64
 	var sourceMessageID int

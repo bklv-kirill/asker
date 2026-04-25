@@ -50,9 +50,9 @@ const attachPhoneCallbackData = "attach_phone"
 const setupProfileButtonText = "⚙️ Настроить профиль"
 
 // callback_data inline-кнопок меню «Настроить профиль». Каждая
-// регистрируется отдельным RegisterHandler с MatchTypeExact, чтобы
-// обеспечить независимый роутинг (gender уже имеет свой хендлер с реальной
-// логикой; age/info остаются заглушками handleProfileField).
+// регистрируется отдельным RegisterHandler с MatchTypeExact: gender
+// открывает второе меню (выбор пола), age и info — каждое свой
+// pending-state flow с текстовым вводом.
 const (
 	profileSetGenderCallback = "profile_set_gender"
 	profileSetAgeCallback    = "profile_set_age"
@@ -70,12 +70,14 @@ const (
 	profileGenderFemaleCallback = "profile_gender_female"
 )
 
-// profilePendingField* — значения in-memory state «жду текстовый ответ
-// от юзера на это поле профиля». Хранится в TelegramBot.pendingProfile;
-// matchFunc matchProfileFieldInput ловит сообщения от юзеров, у которых
-// state выставлен.
+// pendingInput* — значения in-memory state «жду текстовый ответ от юзера X».
+// Хранится в TelegramBot.pendingInput; matchFunc matchPendingInput ловит
+// сообщения от юзеров, у которых state выставлен. Значения namespace'нуты
+// префиксом домена (`profile.*` для полей профиля), чтобы при появлении
+// нового сценария (опрос, модерация, etc.) state не пересекался по семантике.
 const (
-	profilePendingFieldAge = "age"
+	pendingInputProfileAge  = "profile.age"
+	pendingInputProfileInfo = "profile.info"
 )
 
 // telegramEventPayload — единая плоская структура payload для журнала
@@ -104,13 +106,15 @@ type TelegramBot struct {
 	telegramUsers  telegramUsersRepo.Repository
 	telegramEvents telegramEventsRepo.Repository
 
-	// pendingProfile — in-memory state «жду текстовый ответ от юзера X на
-	// поле профиля Y». Ключ — telegram_user_id (from.ID), значение —
-	// одна из profilePendingField* констант. State теряется при рестарте
-	// бота — для текущего масштаба приемлемо. Перейдём в БД, когда
-	// потребуется persistence.
-	pendingMu      sync.RWMutex
-	pendingProfile map[int64]string
+	// pendingInput — in-memory state «жду текстовый ответ от юзера X
+	// на сценарий Y». Ключ — telegram_user_id (from.ID), значение —
+	// одна из pendingInput* констант (с namespace-префиксом домена,
+	// напр. `profile.age`). Один state per юзер: если юзер был в
+	// одном flow и ушёл в другой, старое значение затирается чисткой
+	// в начале целевого хендлера. State теряется при рестарте бота —
+	// для текущего масштаба приемлемо.
+	pendingMu    sync.RWMutex
+	pendingInput map[int64]string
 }
 
 func NewTelegramBot(
@@ -132,39 +136,39 @@ func NewTelegramBot(
 		telegramUsers:  telegramUsers,
 		telegramEvents: telegramEvents,
 
-		pendingProfile: make(map[int64]string),
+		pendingInput: make(map[int64]string),
 	}
 }
 
-// setPendingProfileField помечает, что от юзера ждём ответ на поле профиля
-// (например, "age"). matchProfileFieldInput по этому state маршрутизирует
-// следующее текстовое сообщение в обработчик ввода.
-func (t *TelegramBot) setPendingProfileField(telegramUserID int64, field string) {
+// setPendingInput помечает, что от юзера ждём текстовый ответ на сценарий
+// kind (например, pendingInputProfileAge). matchPendingInput по этому state
+// маршрутизирует следующее текстовое сообщение в обработчик ввода.
+func (t *TelegramBot) setPendingInput(telegramUserID int64, kind string) {
 	t.pendingMu.Lock()
 	defer t.pendingMu.Unlock()
 
-	t.pendingProfile[telegramUserID] = field
+	t.pendingInput[telegramUserID] = kind
 }
 
-// getPendingProfileField возвращает имя поля, на которое ждём ответ, и флаг
-// присутствия. Используется в matchProfileFieldInput и в обработчике ввода.
-func (t *TelegramBot) getPendingProfileField(telegramUserID int64) (string, bool) {
+// getPendingInput возвращает kind, на который ждём ответ, и флаг присутствия.
+// Используется в matchPendingInput и в общем диспетчере handlePendingInput.
+func (t *TelegramBot) getPendingInput(telegramUserID int64) (string, bool) {
 	t.pendingMu.RLock()
 	defer t.pendingMu.RUnlock()
 
-	field, ok := t.pendingProfile[telegramUserID]
+	kind, ok := t.pendingInput[telegramUserID]
 
-	return field, ok
+	return kind, ok
 }
 
-// clearPendingProfileField сбрасывает state. Вызывается всеми exact-match
+// clearPendingInput сбрасывает state. Вызывается всеми exact-match
 // и prefix-match хендлерами в начале — это «отмена» ожидания: юзер пошёл
 // в другой сценарий (/start, кнопка меню и т.п.).
-func (t *TelegramBot) clearPendingProfileField(telegramUserID int64) {
+func (t *TelegramBot) clearPendingInput(telegramUserID int64) {
 	t.pendingMu.Lock()
 	defer t.pendingMu.Unlock()
 
-	delete(t.pendingProfile, telegramUserID)
+	delete(t.pendingInput, telegramUserID)
 }
 
 // Start инициализирует клиента Bot API, регистрирует обработчики и запускает
@@ -185,9 +189,9 @@ func (t *TelegramBot) Start(ctx context.Context) error {
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, profileGenderCallbackPrefix, bot.MatchTypePrefix, t.handleProfileGender)
 
 	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, profileSetAgeCallback, bot.MatchTypeExact, t.handleProfileSetAge)
-	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, profileSetInfoCallback, bot.MatchTypeExact, t.handleProfileField)
+	b.RegisterHandler(bot.HandlerTypeCallbackQueryData, profileSetInfoCallback, bot.MatchTypeExact, t.handleProfileSetInfo)
 
-	b.RegisterHandlerMatchFunc(t.matchProfileFieldInput, t.handleProfileFieldInput)
+	b.RegisterHandlerMatchFunc(t.matchPendingInput, t.handlePendingInput)
 
 	b.RegisterHandlerMatchFunc(matchMessageContact, t.handleContact)
 
@@ -204,17 +208,17 @@ func matchMessageContact(update *models.Update) bool {
 	return update.Message != nil && update.Message.Contact != nil
 }
 
-// matchProfileFieldInput срабатывает на любое текстовое сообщение от
-// юзера, для которого установлен pending state (например, ждём age).
+// matchPendingInput срабатывает на любое текстовое сообщение от юзера,
+// для которого установлен pending state (например, ждём profile.age).
 // Регистрируется ПОСЛЕ всех exact-match хендлеров, так что /start,
 // «⚙️ Настроить профиль» и т.п. имеют приоритет — они сами чистят state
 // в начале и идут по своему сценарию.
-func (t *TelegramBot) matchProfileFieldInput(update *models.Update) bool {
+func (t *TelegramBot) matchPendingInput(update *models.Update) bool {
 	if update.Message == nil || update.Message.From == nil || update.Message.Text == "" {
 		return false
 	}
 
-	_, ok := t.getPendingProfileField(update.Message.From.ID)
+	_, ok := t.getPendingInput(update.Message.From.ID)
 
 	return ok
 }

@@ -10,12 +10,12 @@ import (
 )
 
 // handleProfileAgeInput — конкретный обработчик ввода возраста, в который
-// диспетчеризует handleProfileFieldInput, когда pending == profilePendingFieldAge.
+// диспетчеризует handlePendingInput, когда pending == pendingInputProfileAge.
 // Парсит число, валидирует диапазон 1..120 (соответствует CHECK схемы),
 // вызывает users.SetAge.
 //
 // Контракт state: ставится в handler_profile_set_age.go при отправке
-// prompt'а; здесь — clearPendingProfileField на любом терминальном исходе
+// prompt'а; здесь — clearPendingInput на любом терминальном исходе
 // (успех, нет user_id, ошибка БД), кроме невалидного ввода — в этом случае
 // state остаётся, юзер пробует снова.
 func (t *TelegramBot) handleProfileAgeInput(ctx context.Context, b *bot.Bot, from *models.User, chatID int64, inText string) {
@@ -29,14 +29,14 @@ func (t *TelegramBot) handleProfileAgeInput(ctx context.Context, b *bot.Bot, fro
 	tgUser, err := t.telegramUsers.GetByTelegramUserID(ctx, from.ID)
 	if err != nil {
 		t.logger.Error("telegram_users get on profile_age input", "err", err, "telegram_user_id", from.ID)
-		t.clearPendingProfileField(from.ID)
+		t.clearPendingInput(from.ID)
 		t.sendProfileAgeInputReply(ctx, b, from, chatID, "❌ Не получилось сохранить. Попробуй позже.")
 
 		return
 	}
 
 	if tgUser.UserID == nil {
-		t.clearPendingProfileField(from.ID)
+		t.clearPendingInput(from.ID)
 		t.sendProfileAgeInputReply(ctx, b, from, chatID, "⚠️ Сначала привяжи номер телефона. Используй /start")
 
 		return
@@ -45,7 +45,7 @@ func (t *TelegramBot) handleProfileAgeInput(ctx context.Context, b *bot.Bot, fro
 	err = t.users.SetAge(ctx, *tgUser.UserID, age)
 	if err != nil {
 		t.logger.Error("users set age", "err", err, "telegram_user_id", from.ID, "users_id", *tgUser.UserID, "age", age)
-		t.clearPendingProfileField(from.ID)
+		t.clearPendingInput(from.ID)
 		t.sendProfileAgeInputReply(ctx, b, from, chatID, "❌ Не получилось сохранить. Попробуй позже.")
 
 		return
@@ -57,7 +57,7 @@ func (t *TelegramBot) handleProfileAgeInput(ctx context.Context, b *bot.Bot, fro
 		"age", age,
 	)
 
-	t.clearPendingProfileField(from.ID)
+	t.clearPendingInput(from.ID)
 	t.sendProfileAgeInputReply(ctx, b, from, chatID, "✅ Возраст сохранён.")
 }
 

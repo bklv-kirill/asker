@@ -7,16 +7,16 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-// handleProfileSetAge — обработчик inline-кнопки «🎂 Указать возраст» из
-// меню «Настроить профиль» (callback_data = profileSetAgeCallback). Шлёт
-// сообщение «🎂 Введи свой возраст числом.» и помечает юзера как ждущего
-// ввод возраста через setPendingInput. Следующее текстовое
+// handleProfileSetInfo — обработчик inline-кнопки «✏️ Рассказать о себе»
+// из меню «Настроить профиль» (callback_data = profileSetInfoCallback).
+// Шлёт сообщение «✏️ Расскажи о себе одним сообщением.» и помечает юзера
+// как ждущего ввод info через setPendingInput. Следующее текстовое
 // сообщение от него ловится matchPendingInput → handlePendingInput.
 //
 // Кнопки исходного меню «Настроить профиль» НЕ убираются — юзер может
 // передумать и выбрать другое поле; в этом случае их хендлеры (handleProfile*)
-// сами вызовут clearPendingInput и age-flow забудется.
-func (t *TelegramBot) handleProfileSetAge(ctx context.Context, b *bot.Bot, update *models.Update) {
+// сами вызовут clearPendingInput и info-flow забудется.
+func (t *TelegramBot) handleProfileSetInfo(ctx context.Context, b *bot.Bot, update *models.Update) {
 	if update.CallbackQuery == nil {
 		return
 	}
@@ -32,7 +32,7 @@ func (t *TelegramBot) handleProfileSetAge(ctx context.Context, b *bot.Bot, updat
 		chatID = query.Message.Message.Chat.ID
 		sourceMessageID = query.Message.Message.ID
 	} else {
-		t.logger.Error("profile_set_age callback without accessible message", "telegram_user_id", from.ID)
+		t.logger.Error("profile_set_info callback without accessible message", "telegram_user_id", from.ID)
 
 		return
 	}
@@ -50,16 +50,16 @@ func (t *TelegramBot) handleProfileSetAge(ctx context.Context, b *bot.Bot, updat
 		CallbackQueryID: query.ID,
 	})
 	if err != nil {
-		t.logger.Error("answer profile_set_age callback", "err", err, "telegram_user_id", from.ID)
+		t.logger.Error("answer profile_set_info callback", "err", err, "telegram_user_id", from.ID)
 	}
 
-	var replyText string = "🎂 Введи свой возраст числом."
+	var replyText string = "✏️ Расскажи о себе одним сообщением."
 	msg, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: chatID,
 		Text:   replyText,
 	})
 	if err != nil {
-		t.logger.Error("send profile_set_age prompt", "err", err, "chat_id", chatID)
+		t.logger.Error("send profile_set_info prompt", "err", err, "chat_id", chatID)
 
 		return
 	}
@@ -71,8 +71,5 @@ func (t *TelegramBot) handleProfileSetAge(ctx context.Context, b *bot.Bot, updat
 		Text:              replyText,
 	})
 
-	// Помечаем юзера как ждущего ввод возраста ПОСЛЕ успешной отправки
-	// prompt'а: если SendMessage упал, нет смысла включать state — юзер
-	// не увидел вопрос.
-	t.setPendingInput(from.ID, pendingInputProfileAge)
+	t.setPendingInput(from.ID, pendingInputProfileInfo)
 }

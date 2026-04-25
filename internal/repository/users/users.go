@@ -29,6 +29,10 @@ var ErrSetGender = errors.New("users: set gender")
 // CHECK на уровне БД, если значение вне диапазона 1..120).
 var ErrSetAge = errors.New("users: set age")
 
+// ErrSetInfo — ошибка обновления users.info (сбой I/O). CHECK'а на колонке
+// нет (свободный текст), поэтому валидация пустоты/длины — на стороне
+// вызывающего хендлера.
+var ErrSetInfo = errors.New("users: set info")
 
 // Repository — интерфейс доступа к таблице users. Потребители (хендлеры,
 // сервисы) зависят от этого интерфейса, а не от конкретной реализации.
@@ -55,4 +59,10 @@ type Repository interface {
 	// ошибку, обёрнутую ErrSetAge. Если записи с таким id нет — UPDATE
 	// затронет 0 строк, это не считается ошибкой.
 	SetAge(ctx context.Context, id int64, age int) error
+
+	// SetInfo обновляет колонку info для записи с указанным id. CHECK'а
+	// на колонке нет — info свободный текст; trim/непустоту проверяет
+	// вызывающий. Если записи с таким id нет — UPDATE затронет 0 строк,
+	// это не считается ошибкой. При сбое I/O — ошибка, обёрнутая ErrSetInfo.
+	SetInfo(ctx context.Context, id int64, info string) error
 }
