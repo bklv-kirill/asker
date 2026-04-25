@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/bklv-kirill/asker/internal/config"
+	telegramEventsRepo "github.com/bklv-kirill/asker/internal/repository/telegram_events"
 	telegramUsersRepo "github.com/bklv-kirill/asker/internal/repository/telegram_users"
 	"github.com/bklv-kirill/asker/internal/storage/sqlite"
 	"github.com/bklv-kirill/asker/internal/telegram"
@@ -34,16 +35,22 @@ func main() {
 	}()
 
 	var telegramUsers telegramUsersRepo.Repository = telegramUsersRepo.NewTelegramUsersSQLiteRepo(db)
+	var telegramEvents telegramEventsRepo.Repository = telegramEventsRepo.NewTelegramEventsSQLiteRepo(db)
 
 	var tg *telegram.TelegramBot = telegram.NewTelegramBot(
 		cfg.TokenBotToken,
 		cfg.BotName,
+
 		logger,
+
 		telegramUsers,
+		telegramEvents,
 	)
+
 	var err error = tg.Start(ctx)
 	if err != nil {
 		logger.Error("telegram start", "err", err)
+
 		os.Exit(1)
 	}
 
