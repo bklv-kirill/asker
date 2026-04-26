@@ -179,7 +179,6 @@ func (t *TelegramBot) sendAssistantText(ctx context.Context, b *bot.Bot, from *t
 	msg, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      chatID,
 		Text:        text,
-		ParseMode:   tgmodels.ParseModeMarkdownV1,
 		ReplyMarkup: replyMarkup,
 	})
 	if err != nil {
@@ -199,7 +198,9 @@ func (t *TelegramBot) sendAssistantText(ctx context.Context, b *bot.Bot, from *t
 // sendAssistantChunked отправляет ответ LLM пачками, если он длиннее
 // chunkMaxRunes; каждая пачка — отдельный SendMessage. В журнале
 // telegram_events пишем ОДНО событие message_out с id последнего
-// отправленного сообщения и полным текстом ответа.
+// отправленного сообщения и полным текстом ответа. Сообщение шлётся
+// без ParseMode — system prompt запрещает LLM любую разметку, поэтому
+// текст уходит «как есть» и Telegram ничего не парсит.
 func (t *TelegramBot) sendAssistantChunked(ctx context.Context, b *bot.Bot, from *tgmodels.User, chatID int64, text string) {
 	var chunks []string = splitForTelegram(text)
 	if len(chunks) == 0 {
@@ -209,9 +210,8 @@ func (t *TelegramBot) sendAssistantChunked(ctx context.Context, b *bot.Bot, from
 	var lastMessageID int
 	for _, chunk := range chunks {
 		msg, err := b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID:    chatID,
-			Text:      chunk,
-			ParseMode: tgmodels.ParseModeMarkdownV1,
+			ChatID: chatID,
+			Text:   chunk,
 		})
 		if err != nil {
 			t.logger.Error("send assistant chunk", "err", err, "chat_id", chatID)
