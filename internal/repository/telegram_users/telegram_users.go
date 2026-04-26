@@ -39,18 +39,13 @@ var ErrSetUserID = errors.New("telegram_users: set user_id")
 // опциональные поля представлены через *string, где nil = «значения нет».
 type Repository interface {
 	// Create сохраняет запись о Telegram-аккаунте и возвращает id созданной
-	// записи. telegramUserID и firstName — обязательные (в TG API оба всегда
-	// присутствуют и непустые). lastName и username опциональны: nil означает,
+	// записи. Принимает DTO models.TelegramUserCreate по значению.
+	// TelegramUserID и FirstName — обязательные (в TG API оба всегда
+	// присутствуют и непустые). LastName и Username опциональны: nil означает,
 	// что значение отсутствует (в SQLite-реализации маппится в NULL).
 	// Уникальность telegram_user_id гарантирует реализация — повторная вставка
 	// того же аккаунта должна приводить к ошибке.
-	Create(
-		ctx context.Context,
-		telegramUserID int64,
-		firstName string,
-		lastName *string,
-		username *string,
-	) (int64, error)
+	Create(ctx context.Context, m models.TelegramUserCreate) (int64, error)
 
 	// ExistsByTelegramUserID возвращает true, если запись с указанным
 	// telegram_user_id уже есть в хранилище. Отсутствие записи — это false,
@@ -58,10 +53,11 @@ type Repository interface {
 	ExistsByTelegramUserID(ctx context.Context, telegramUserID int64) (bool, error)
 
 	// GetByTelegramUserID возвращает запись по telegram_user_id. Если записи
-	// нет — возвращает (nil, ErrNotFound); при реальном сбое — (nil, error,
-	// обёрнутый ErrGetByTelegramUserID). Вызывающий должен различать эти
-	// случаи через errors.Is(err, ErrNotFound).
-	GetByTelegramUserID(ctx context.Context, telegramUserID int64) (*models.TelegramUser, error)
+	// нет — возвращает (zero-value, ErrNotFound); при реальном сбое —
+	// (zero-value, error, обёрнутый ErrGetByTelegramUserID). Вызывающий
+	// должен различать эти случаи через errors.Is(err, ErrNotFound) и
+	// читать поля только при err == nil.
+	GetByTelegramUserID(ctx context.Context, telegramUserID int64) (models.TelegramUser, error)
 
 	// SetUserIDByTelegramUserID проставляет связь telegram_users.user_id для
 	// записи с заданным telegram_user_id. Используется в сценарии привязки

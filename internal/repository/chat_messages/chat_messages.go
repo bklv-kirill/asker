@@ -33,17 +33,17 @@ var ErrGetLast = errors.New("chat_messages: get last")
 // (Telegram-хендлер ассистента, будущие сценарии экспорта истории и т.п.)
 // зависят от этого интерфейса, а не от конкретной реализации.
 type Repository interface {
-	// Create сохраняет одно сообщение диалога. Поля m.ID и m.CreatedAt при
-	// вызове игнорируются (id — AUTOINCREMENT, created_at — DEFAULT
-	// CURRENT_TIMESTAMP); реализация может проставить их обратно в *m
-	// для удобства вызывающего, но контрактом это не гарантируется.
-	// При сбое I/O — ошибка, обёрнутая ErrCreate.
-	Create(ctx context.Context, m *models.ChatMessage) error
+	// Create сохраняет одно сообщение диалога и возвращает id созданной
+	// строки. Принимает DTO models.ChatMessageCreate по значению — без
+	// скрытой мутации структуры вызывающего; id и created_at проставляет
+	// БД (AUTOINCREMENT / DEFAULT CURRENT_TIMESTAMP). При сбое I/O —
+	// ошибка, обёрнутая ErrCreate.
+	Create(ctx context.Context, m models.ChatMessageCreate) (int64, error)
 
 	// GetLast возвращает последние limit сообщений пользователя в
 	// хронологическом порядке (oldest-first) — удобно для подачи в LLM
 	// как `messages` без дополнительной сортировки на стороне вызывающего.
 	// Если истории нет — пустой срез + nil-ошибка. При сбое I/O или
 	// сканирования — ошибка, обёрнутая ErrGetLast.
-	GetLast(ctx context.Context, userID int64, limit int) ([]*models.ChatMessage, error)
+	GetLast(ctx context.Context, userID int64, limit int) ([]models.ChatMessage, error)
 }

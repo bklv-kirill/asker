@@ -27,3 +27,15 @@ type ChatMessage struct {
 	Content   string
 	CreatedAt time.Time
 }
+
+// ChatMessageCreate — DTO для метода Create репозитория. Несёт ровно те
+// поля, которые задаёт вызывающий: ID и CreatedAt проставляет БД и они
+// в Create-структуре отсутствуют. Передаётся по значению — экономии на
+// копировании не ищем; id созданной строки возвращается отдельным
+// значением через сигнатуру `Create(...) (int64, error)`, без скрытой
+// мутации полей вызывающего.
+type ChatMessageCreate struct {
+	UserID  int64
+	Role    ChatMessageRole
+	Content string
+}

@@ -22,7 +22,7 @@ func NewUsersSQLiteRepo(db *sql.DB) Repository {
 	return &usersSQLiteRepo{db: db}
 }
 
-func (r *usersSQLiteRepo) Create(ctx context.Context, name, phone string) (int64, error) {
+func (r *usersSQLiteRepo) Create(ctx context.Context, name string, phone string) (int64, error) {
 	result, err := r.db.ExecContext(
 		ctx,
 		`INSERT INTO users (name, phone) VALUES (?, ?)`,
@@ -91,7 +91,7 @@ func (r *usersSQLiteRepo) SetInfo(ctx context.Context, id int64, info string) er
 	return nil
 }
 
-func (r *usersSQLiteRepo) GetByID(ctx context.Context, id int64) (*models.User, error) {
+func (r *usersSQLiteRepo) GetByID(ctx context.Context, id int64) (models.User, error) {
 	var (
 		userID    int64
 		name      sql.NullString
@@ -111,13 +111,13 @@ func (r *usersSQLiteRepo) GetByID(ctx context.Context, id int64) (*models.User, 
 		id,
 	).Scan(&userID, &name, &gender, &age, &info, &phone, &createdAt, &updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
+		return models.User{}, ErrNotFound
 	}
 	if err != nil {
-		return nil, errors.Join(ErrGetByID, err)
+		return models.User{}, errors.Join(ErrGetByID, err)
 	}
 
-	return &models.User{
+	return models.User{
 		ID:        userID,
 		Name:      nullStringToPtr(name),
 		Gender:    nullStringToGenderPtr(gender),

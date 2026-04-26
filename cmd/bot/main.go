@@ -7,11 +7,15 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/bklv-kirill/asker/internal/config"
+	chatMessagesRepo "github.com/bklv-kirill/asker/internal/repository/chat_messages"
 	telegramEventsRepo "github.com/bklv-kirill/asker/internal/repository/telegram_events"
 	telegramUsersRepo "github.com/bklv-kirill/asker/internal/repository/telegram_users"
 	usersRepo "github.com/bklv-kirill/asker/internal/repository/users"
+	"github.com/bklv-kirill/asker/internal/services/ai"
+	aiFactory "github.com/bklv-kirill/asker/internal/services/ai/factory"
 	"github.com/bklv-kirill/asker/internal/storage/sqlite"
 	"github.com/bklv-kirill/asker/internal/telegram"
 )
@@ -27,7 +31,7 @@ func main() {
 
 	logger.Info("starting", "app", cfg.AppName, "bot", cfg.BotName)
 
-	var db *sql.DB = sqlite.New(cfg, logger)
+	var db *sql.DB = sqlite.New(cfg.DBPath, logger)
 	defer func() {
 		var err error = db.Close()
 		if err != nil {
@@ -38,9 +42,20 @@ func main() {
 	var users usersRepo.Repository = usersRepo.NewUsersSQLiteRepo(db)
 	var telegramUsers telegramUsersRepo.Repository = telegramUsersRepo.NewTelegramUsersSQLiteRepo(db)
 	var telegramEvents telegramEventsRepo.Repository = telegramEventsRepo.NewTelegramEventsSQLiteRepo(db)
+	var chatMessages chatMessagesRepo.Repository = chatMessagesRepo.NewChatMessagesSQLiteRepo(db)
+
+	var aiTimeout time.Duration = time.Duration(cfg.AITimeoutSec) * time.Second
+
+	var llm ai.LLM = aiFactory.NewLLM(
+		cfg.AIProvider,
+		cfg.AIAPIKey,
+		cfg.AIModel,
+		cfg.AISystemPromptPath,
+		aiTimeout,
+	)
 
 	var tg *telegram.TelegramBot = telegram.NewTelegramBot(
-		cfg.TokenBotToken,
+		cfg.TelegramBotToken,
 		cfg.BotName,
 
 		logger,
@@ -48,6 +63,9 @@ func main() {
 		users,
 		telegramUsers,
 		telegramEvents,
+		chatMessages,
+
+		llm,
 	)
 
 	var err error = tg.Start(ctx)

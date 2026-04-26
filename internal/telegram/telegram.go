@@ -18,11 +18,14 @@ import (
 	"sync"
 
 	"github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
+	tgmodels "github.com/go-telegram/bot/models"
 
+	"github.com/bklv-kirill/asker/internal/models"
+	chatMessagesRepo "github.com/bklv-kirill/asker/internal/repository/chat_messages"
 	telegramEventsRepo "github.com/bklv-kirill/asker/internal/repository/telegram_events"
 	telegramUsersRepo "github.com/bklv-kirill/asker/internal/repository/telegram_users"
 	usersRepo "github.com/bklv-kirill/asker/internal/repository/users"
+	"github.com/bklv-kirill/asker/internal/services/ai"
 )
 
 var ErrInitBot = errors.New("telegram: init bot")
@@ -109,6 +112,9 @@ type TelegramBot struct {
 	users          usersRepo.Repository
 	telegramUsers  telegramUsersRepo.Repository
 	telegramEvents telegramEventsRepo.Repository
+	chatMessages   chatMessagesRepo.Repository
+
+	llm ai.LLM
 
 	// pendingInput — in-memory state «жду текстовый ответ от юзера X
 	// на сценарий Y». Ключ — telegram_user_id (from.ID), значение —
@@ -129,6 +135,9 @@ func NewTelegramBot(
 	users usersRepo.Repository,
 	telegramUsers telegramUsersRepo.Repository,
 	telegramEvents telegramEventsRepo.Repository,
+	chatMessages chatMessagesRepo.Repository,
+
+	llm ai.LLM,
 ) *TelegramBot {
 	return &TelegramBot{
 		token:   token,
@@ -139,6 +148,9 @@ func NewTelegramBot(
 		users:          users,
 		telegramUsers:  telegramUsers,
 		telegramEvents: telegramEvents,
+		chatMessages:   chatMessages,
+
+		llm: llm,
 
 		pendingInput: make(map[int64]string),
 	}
@@ -178,7 +190,7 @@ func (t *TelegramBot) clearPendingInput(telegramUserID int64) {
 // Start инициализирует клиента Bot API, регистрирует обработчики и запускает
 // long-polling. Блокирует вызывающего, пока ctx не будет отменён.
 func (t *TelegramBot) Start(ctx context.Context) error {
-	b, err := bot.New(t.token, bot.WithDefaultHandler(t.handleEcho))
+	b, err := bot.New(t.token, bot.WithDefaultHandler(t.handleAssistant))
 	if err != nil {
 		return errors.Join(ErrInitBot, err)
 	}
@@ -209,7 +221,7 @@ func (t *TelegramBot) Start(ctx context.Context) error {
 // поле Contact (пользователь поделился номером через кнопку
 // request_contact). Default-хендлер (handleEcho) на такие апдейты не
 // сработает — RegisterHandlerMatchFunc проверяется раньше дефолтного.
-func matchMessageContact(update *models.Update) bool {
+func matchMessageContact(update *tgmodels.Update) bool {
 	return update.Message != nil && update.Message.Contact != nil
 }
 
@@ -218,7 +230,7 @@ func matchMessageContact(update *models.Update) bool {
 // Регистрируется ПОСЛЕ всех exact-match хендлеров, так что /start,
 // «⚙️ Настроить профиль» и т.п. имеют приоритет — они сами чистят state
 // в начале и идут по своему сценарию.
-func (t *TelegramBot) matchPendingInput(update *models.Update) bool {
+func (t *TelegramBot) matchPendingInput(update *tgmodels.Update) bool {
 	if update.Message == nil || update.Message.From == nil || update.Message.Text == "" {
 		return false
 	}
@@ -232,7 +244,7 @@ func (t *TelegramBot) matchPendingInput(update *models.Update) bool {
 // если её там ещё нет. Идемпотентен: повторный вызов для того же from.ID — no-op.
 // Ошибки хранилища логируются и наружу не пробрасываются: вызывающий сценарий
 // (хендлер) не должен блокироваться, если БД временно недоступна.
-func (t *TelegramBot) CreateNewTelegramUserIfNotExists(ctx context.Context, from *models.User) {
+func (t *TelegramBot) CreateNewTelegramUserIfNotExists(ctx context.Context, from *tgmodels.User) {
 	exists, err := t.telegramUsers.ExistsByTelegramUserID(ctx, from.ID)
 	if err != nil {
 		t.logger.Error("telegram_users exists check", "err", err, "telegram_user_id", from.ID)
@@ -245,7 +257,12 @@ func (t *TelegramBot) CreateNewTelegramUserIfNotExists(ctx context.Context, from
 	var lastName *string = optionalString(from.LastName)
 	var username *string = optionalString(from.Username)
 
-	id, err := t.telegramUsers.Create(ctx, from.ID, from.FirstName, lastName, username)
+	id, err := t.telegramUsers.Create(ctx, models.TelegramUserCreate{
+		TelegramUserID: from.ID,
+		FirstName:      from.FirstName,
+		LastName:       lastName,
+		Username:       username,
+	})
 	if err != nil {
 		t.logger.Error("telegram_users create", "err", err, "telegram_user_id", from.ID)
 
@@ -267,7 +284,7 @@ func (t *TelegramBot) CreateNewTelegramUserIfNotExists(ctx context.Context, from
 // (lookup + insert); кэш id'шников добавим отдельным шагом, когда увидим
 // нагрузку. Ошибки хранилища и маршалинга логируются и наружу не
 // пробрасываются — хендлеры не должны блокироваться из-за сбоя журнала.
-func (t *TelegramBot) LogTelegramEvent(ctx context.Context, from *models.User, payload telegramEventPayload) {
+func (t *TelegramBot) LogTelegramEvent(ctx context.Context, from *tgmodels.User, payload telegramEventPayload) {
 	user, err := t.telegramUsers.GetByTelegramUserID(ctx, from.ID)
 	if err != nil {
 		t.logger.Error("telegram_events lookup user", "err", err, "telegram_user_id", from.ID, "event", payload.Event)
@@ -282,7 +299,10 @@ func (t *TelegramBot) LogTelegramEvent(ctx context.Context, from *models.User, p
 		return
 	}
 
-	id, err := t.telegramEvents.Create(ctx, user.ID, raw)
+	id, err := t.telegramEvents.Create(ctx, models.TelegramEventCreate{
+		TelegramUserID: user.ID,
+		Payload:        raw,
+	})
 	if err != nil {
 		t.logger.Error("telegram_events create", "err", err, "telegram_user_id", from.ID, "event", payload.Event)
 
@@ -302,9 +322,9 @@ func (t *TelegramBot) LogTelegramEvent(ctx context.Context, from *models.User, p
 // юзеров — после первичной привязки номера и при /start, чтобы клавиатура
 // не исчезала. IsPersistent=true просит TG не сворачивать её,
 // ResizeKeyboard уменьшает высоту.
-func profileSettingsKeyboard() models.ReplyKeyboardMarkup {
-	return models.ReplyKeyboardMarkup{
-		Keyboard: [][]models.KeyboardButton{
+func profileSettingsKeyboard() tgmodels.ReplyKeyboardMarkup {
+	return tgmodels.ReplyKeyboardMarkup{
+		Keyboard: [][]tgmodels.KeyboardButton{
 			{
 				{Text: setupProfileButtonText},
 			},
@@ -320,9 +340,9 @@ func profileSettingsKeyboard() models.ReplyKeyboardMarkup {
 // profileFieldsInlineMarkup собирает inline-клавиатуру меню «Настроить
 // профиль» — три кнопки на каждое поле доменного users (gender / age /
 // info), каждая в своей строке для лучшего UX.
-func profileFieldsInlineMarkup() models.InlineKeyboardMarkup {
-	return models.InlineKeyboardMarkup{
-		InlineKeyboard: [][]models.InlineKeyboardButton{
+func profileFieldsInlineMarkup() tgmodels.InlineKeyboardMarkup {
+	return tgmodels.InlineKeyboardMarkup{
+		InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
 			{
 				{Text: "👤 Указать пол", CallbackData: profileSetGenderCallback},
 			},
@@ -342,9 +362,9 @@ func profileFieldsInlineMarkup() models.InlineKeyboardMarkup {
 // чтобы юзеру не казалось, что варианты не совпадают с тем, что попадёт
 // в БД. callback_data — отдельный префикс profile_gender_, чтобы общий
 // handleProfileGender различил их.
-func profileGenderInlineMarkup() models.InlineKeyboardMarkup {
-	return models.InlineKeyboardMarkup{
-		InlineKeyboard: [][]models.InlineKeyboardButton{
+func profileGenderInlineMarkup() tgmodels.InlineKeyboardMarkup {
+	return tgmodels.InlineKeyboardMarkup{
+		InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
 			{
 				{Text: "👨 Мужчина", CallbackData: profileGenderMaleCallback},
 				{Text: "👩 Женщина", CallbackData: profileGenderFemaleCallback},

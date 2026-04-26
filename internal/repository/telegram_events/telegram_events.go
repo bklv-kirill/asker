@@ -13,8 +13,9 @@ package telegramEventsRepo
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+
+	"github.com/bklv-kirill/asker/internal/models"
 )
 
 // ErrCreate — ошибка вставки записи в хранилище. Оборачивается причиной
@@ -27,12 +28,9 @@ var ErrCreate = errors.New("telegram_events: create")
 // экспорт и т.п.).
 type Repository interface {
 	// Create сохраняет одно событие журнала и возвращает id созданной записи.
-	// telegramUserID — внутренний id из telegram_users (FK), payload —
-	// готовый сериализованный JSON. Валидность JSON проверяет CHECK в схеме;
-	// при невалидном payload SQLite вернёт ошибку, обёрнутую ErrCreate.
-	Create(
-		ctx context.Context,
-		telegramUserID int64,
-		payload json.RawMessage,
-	) (int64, error)
+	// Принимает DTO models.TelegramEventCreate по значению (TelegramUserID
+	// — внутренний id из telegram_users, FK; Payload — готовый сериализованный
+	// JSON). Валидность JSON проверяет CHECK в схеме; при невалидном
+	// payload SQLite вернёт ошибку, обёрнутую ErrCreate.
+	Create(ctx context.Context, m models.TelegramEventCreate) (int64, error)
 }

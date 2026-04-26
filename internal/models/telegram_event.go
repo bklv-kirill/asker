@@ -20,3 +20,12 @@ type TelegramEvent struct {
 	Payload        json.RawMessage
 	CreatedAt      time.Time
 }
+
+// TelegramEventCreate — DTO для метода Create репозитория. Несёт ровно
+// те поля, которые задаёт вызывающий: ID и CreatedAt проставляет БД и
+// в Create-структуре отсутствуют. Передаётся по значению; id созданной
+// строки возвращается отдельным значением через `Create(...) (int64, error)`.
+type TelegramEventCreate struct {
+	TelegramUserID int64
+	Payload        json.RawMessage
+}

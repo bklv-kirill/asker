@@ -3,3 +3,4 @@
 /vendor/
 /data/
 *.log
+/cmd/test/

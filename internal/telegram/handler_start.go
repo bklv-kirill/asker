@@ -37,12 +37,12 @@ func (t *TelegramBot) handleStart(ctx context.Context, b *bot.Bot, update *model
 	// Сначала пробуем достать существующую запись — она нужна, чтобы
 	// различить «новый», «возвратившийся без номера» и «возвратившийся
 	// с привязанным номером». Ошибка ErrNotFound — валидное состояние
-	// «новый пользователь». Любая другая — лог + продолжаем как с новым.
+	// «новый пользователь» (found=false). Любая другая — лог + идём по
+	// ветке нового (found=false).
 	tgUser, err := t.telegramUsers.GetByTelegramUserID(ctx, from.ID)
+	var found bool = err == nil
 	if err != nil && !errors.Is(err, telegramUsersRepo.ErrNotFound) {
 		t.logger.Error("telegram_users get on /start", "err", err, "telegram_user_id", from.ID)
-
-		tgUser = nil
 	}
 
 	t.CreateNewTelegramUserIfNotExists(ctx, from)
@@ -60,10 +60,10 @@ func (t *TelegramBot) handleStart(ctx context.Context, b *bot.Bot, update *model
 	)
 
 	switch {
-		case tgUser != nil && tgUser.UserID != nil:
+		case found && tgUser.UserID != nil:
 			replyText = fmt.Sprintf("👋 Рад тебя снова видеть, %s!\n\nℹ️ Номер телефона уже привязан.", from.FirstName)
 			replyMarkup = profileSettingsKeyboard()
-		case tgUser != nil:
+		case found:
 			replyText = fmt.Sprintf("👋 Рад тебя снова видеть, %s!\n\n📱 Для более точных ответов можешь привязать свой номер телефона и настроить профиль.", from.FirstName)
 			replyMarkup = attachPhoneInlineMarkup()
 		default:

@@ -1,6 +1,8 @@
 FROM golang:1.25-alpine
 
-RUN apk add --no-cache git build-base
+RUN apk add --no-cache git build-base nodejs npm
+
+RUN npm install -g @anthropic-ai/claude-code
 
 WORKDIR /app
 

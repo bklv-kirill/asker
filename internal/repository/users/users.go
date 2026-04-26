@@ -52,7 +52,7 @@ type Repository interface {
 	// нормализованную строку из одних цифр (CHECK в схеме отбракует мусор).
 	// Остальные поля профиля (gender, age, info) опциональны — на момент создания
 	// они NULL, заполняются позже отдельными методами.
-	Create(ctx context.Context, name, phone string) (int64, error)
+	Create(ctx context.Context, name string, phone string) (int64, error)
 
 	// SetGender обновляет колонку gender для записи с указанным id. Допустимые
 	// значения — константы models.GenderMale / models.GenderFemale
@@ -77,7 +77,8 @@ type Repository interface {
 
 	// GetByID возвращает запись users по внутреннему id. «Не найдено» —
 	// ErrNotFound (без обёртки), сбой I/O/сканирования — обёрнутая
-	// ErrGetByID. Опциональные колонки (name, gender, age, info) маппятся
-	// в указатели — nil означает NULL.
-	GetByID(ctx context.Context, id int64) (*models.User, error)
+	// ErrGetByID. На любой ошибке возвращается zero-value models.User{};
+	// поля читать только при err == nil. Опциональные колонки (name,
+	// gender, age, info) маппятся в указатели — nil означает NULL.
+	GetByID(ctx context.Context, id int64) (models.User, error)
 }

@@ -1,6 +1,6 @@
-// Package sqlite открывает соединение с SQLite-файлом по пути из конфига и
-// возвращает готовый *sql.DB. Конкретные репозитории (под модели) строятся
-// отдельно и принимают *sql.DB в своих конструкторах.
+// Package sqlite открывает соединение с SQLite-файлом и возвращает готовый
+// *sql.DB. Конкретные репозитории (под модели) строятся отдельно и принимают
+// *sql.DB в своих конструкторах.
 package sqlite
 
 import (
@@ -9,11 +9,9 @@ import (
 	"log/slog"
 
 	_ "github.com/mattn/go-sqlite3"
-
-	"github.com/bklv-kirill/asker/internal/config"
 )
 
-// New открывает SQLite-файл по пути из cfg.DBPath и проверяет соединение.
+// New открывает SQLite-файл по пути path и проверяет соединение.
 // При любой ошибке — panic: без валидного хранилища приложение не должно
 // стартовать (консистентно с контрактом config.Load). При неудаче ping
 // соединение закрывается перед паникой, чтобы не оставлять висящих дескрипторов.
@@ -26,21 +24,21 @@ import (
 // `db.Exec("PRAGMA foreign_keys = ON")` после Open: PRAGMA в SQLite живёт
 // на уровне соединения, а database/sql пулит соединения — Exec затронет
 // только одно случайное.
-func New(cfg *config.Config, logger *slog.Logger) *sql.DB {
-	var dsn string = cfg.DBPath + "?_foreign_keys=on"
+func New(path string, logger *slog.Logger) *sql.DB {
+	var dsn string = path + "?_foreign_keys=on"
 
 	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
-		panic(fmt.Errorf("sqlite: open %s: %w", cfg.DBPath, err))
+		panic(fmt.Errorf("sqlite: open %s: %w", path, err))
 	}
 
 	err = db.Ping()
 	if err != nil {
 		_ = db.Close()
-		panic(fmt.Errorf("sqlite: ping %s: %w", cfg.DBPath, err))
+		panic(fmt.Errorf("sqlite: ping %s: %w", path, err))
 	}
 
-	logger.Info("sqlite opened", "path", cfg.DBPath)
+	logger.Info("sqlite opened", "path", path)
 
 	return db
 }

@@ -23,3 +23,17 @@ type TelegramUser struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
+
+// TelegramUserCreate — DTO для метода Create репозитория. Несёт ровно
+// те поля, которые задаёт вызывающий при появлении нового TG-аккаунта:
+// ID, CreatedAt, UpdatedAt проставляет БД и здесь их нет; UserID
+// (привязка к доменному users) тоже не задаётся при создании — он
+// проставляется отдельным методом SetUserIDByTelegramUserID после
+// того, как пользователь привязал номер телефона. Опциональные поля —
+// указатели (nil = NULL в БД).
+type TelegramUserCreate struct {
+	TelegramUserID int64
+	FirstName      string
+	LastName       *string
+	Username       *string
+}

@@ -107,7 +107,7 @@ func (t *TelegramBot) sendMyProfileReply(ctx context.Context, b *bot.Bot, from *
 // юзер мог написать `<` или `&` в «о себе», иначе TG отвалит ParseMode.
 // Phone хранится только цифрами (CHECK), age — int, gender — enum: им
 // экранирование не нужно, но gender прогоняется через escape для единообразия.
-func formatMyProfile(u *models.User) string {
+func formatMyProfile(u models.User) string {
 	var lines []string = []string{
 		"<b>👤 Твой профиль</b>",
 		"",

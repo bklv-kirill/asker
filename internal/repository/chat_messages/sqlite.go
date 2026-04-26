@@ -20,7 +20,7 @@ func NewChatMessagesSQLiteRepo(db *sql.DB) Repository {
 	return &chatMessagesSQLiteRepo{db: db}
 }
 
-func (r *chatMessagesSQLiteRepo) Create(ctx context.Context, m *models.ChatMessage) error {
+func (r *chatMessagesSQLiteRepo) Create(ctx context.Context, m models.ChatMessageCreate) (int64, error) {
 	// Явная конвертация role в string: named-type ChatMessageRole без
 	// driver.Valuer некоторые драйверы database/sql напрямую не понимают.
 	result, err := r.db.ExecContext(
@@ -29,24 +29,22 @@ func (r *chatMessagesSQLiteRepo) Create(ctx context.Context, m *models.ChatMessa
 		m.UserID, string(m.Role), m.Content,
 	)
 	if err != nil {
-		return errors.Join(ErrCreate, err)
+		return 0, errors.Join(ErrCreate, err)
 	}
 
 	id, err := result.LastInsertId()
 	if err != nil {
-		return errors.Join(ErrCreate, err)
+		return 0, errors.Join(ErrCreate, err)
 	}
 
-	m.ID = id
-
-	return nil
+	return id, nil
 }
 
 func (r *chatMessagesSQLiteRepo) GetLast(
 	ctx context.Context,
 	userID int64,
 	limit int,
-) ([]*models.ChatMessage, error) {
+) ([]models.ChatMessage, error) {
 	// Тянем DESC + LIMIT — это даёт последние limit строк за один проход
 	// по индексу (idx_chat_messages_user_created). Разворот в хронологический
 	// порядок (oldest-first) делаем в Go: для LLM удобнее подавать messages
@@ -66,11 +64,11 @@ func (r *chatMessagesSQLiteRepo) GetLast(
 	}
 	defer rows.Close()
 
-	var collected []*models.ChatMessage
+	var collected []models.ChatMessage
 	for rows.Next() {
 		var (
 			id        int64
-			userID       int64
+			userID    int64
 			role      string
 			content   string
 			createdAt time.Time
@@ -80,7 +78,7 @@ func (r *chatMessagesSQLiteRepo) GetLast(
 			return nil, errors.Join(ErrGetLast, scanErr)
 		}
 
-		collected = append(collected, &models.ChatMessage{
+		collected = append(collected, models.ChatMessage{
 			ID:        id,
 			UserID:    userID,
 			Role:      models.ChatMessageRole(role),

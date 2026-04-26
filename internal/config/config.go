@@ -12,14 +12,11 @@ import (
 type Config struct {
 	AppName       string `mapstructure:"APP_NAME"`
 	BotName       string `mapstructure:"BOT_NAME"`
-	TokenBotToken string `mapstructure:"TOKEN_BOT_TOKEN"`
+	TelegramBotToken string `mapstructure:"TELEGRAM_BOT_TOKEN"`
 	DBPath        string `mapstructure:"DB_PATH"`
 
-	// AIEnabled — мастер-выключатель ИИ-ассистента. При false ассистент
-	// не инициализируется и default-handler Telegram-бота остаётся как есть
-	// (это позволяет локальной разработке работать без API-ключа). При true
-	// все остальные AI_* поля становятся required и валидируются на непустоту.
-	AIEnabled bool `mapstructure:"AI_ENABLED"`
+	// AIAPIKey — ключ доступа к LLM-провайдеру. Не логировать.
+	AIAPIKey string `mapstructure:"AI_API_KEY"`
 
 	// AIProvider — идентификатор реализации llm.Client ("anthropic", "openai",
 	// "fake" и т.п.). Сборка конкретного клиента по этой строке — в main.go.
@@ -27,9 +24,6 @@ type Config struct {
 
 	// AIModel — имя модели у выбранного провайдера (напр. "claude-opus-4-7").
 	AIModel string `mapstructure:"AI_MODEL"`
-
-	// AIAPIKey — ключ доступа к LLM-провайдеру. Не логировать.
-	AIAPIKey string `mapstructure:"AI_API_KEY"`
 
 	// AISystemPromptPath — путь к файлу с системным промптом ассистента
 	// (читается один раз при старте). Bind-mount /prompts/ в контейнер
@@ -39,10 +33,6 @@ type Config struct {
 	// AITimeoutSec — таймаут одного запроса к LLM в секундах. Используется
 	// для context.WithTimeout в Telegram-хендлере перед вызовом Answer.
 	AITimeoutSec int `mapstructure:"AI_TIMEOUT_SEC"`
-
-	// AIHistoryLimit — сколько последних сообщений из chat_messages подавать
-	// в LLM как контекст диалога.
-	AIHistoryLimit int `mapstructure:"AI_HISTORY_LIMIT"`
 }
 
 // Load читает .env (если существует) и переменные окружения, собирает Config.
@@ -62,9 +52,9 @@ func Load() *Config {
 	// BindEnv нужен, чтобы Unmarshal подхватывал переменные окружения,
 	// которых нет в .env — без него AutomaticEnv срабатывает только для Get*.
 	for _, key := range []string{
-		"APP_NAME", "BOT_NAME", "TOKEN_BOT_TOKEN", "DB_PATH",
-		"AI_ENABLED", "AI_PROVIDER", "AI_MODEL", "AI_API_KEY",
-		"AI_SYSTEM_PROMPT_PATH", "AI_TIMEOUT_SEC", "AI_HISTORY_LIMIT",
+		"APP_NAME", "BOT_NAME", "TELEGRAM_BOT_TOKEN", "DB_PATH",
+		"AI_PROVIDER", "AI_MODEL", "AI_API_KEY",
+		"AI_SYSTEM_PROMPT_PATH", "AI_TIMEOUT_SEC",
 	} {
 		err = v.BindEnv(key)
 		if err != nil {
@@ -80,20 +70,14 @@ func Load() *Config {
 
 	requireNonEmpty("APP_NAME", cfg.AppName)
 	requireNonEmpty("BOT_NAME", cfg.BotName)
-	requireNonEmpty("TOKEN_BOT_TOKEN", cfg.TokenBotToken)
+	requireNonEmpty("TELEGRAM_BOT_TOKEN", cfg.TelegramBotToken)
 	requireNonEmpty("DB_PATH", cfg.DBPath)
 
-	// AI_* поля required только при AI_ENABLED=true: иначе локальная
-	// разработка без API-ключа невозможна. При выключенном ассистенте
-	// поля могут быть пустыми/нулями — main.go их не трогает.
-	if cfg.AIEnabled {
-		requireNonEmpty("AI_PROVIDER", cfg.AIProvider)
-		requireNonEmpty("AI_MODEL", cfg.AIModel)
-		requireNonEmpty("AI_API_KEY", cfg.AIAPIKey)
-		requireNonEmpty("AI_SYSTEM_PROMPT_PATH", cfg.AISystemPromptPath)
-		requirePositive("AI_TIMEOUT_SEC", cfg.AITimeoutSec)
-		requirePositive("AI_HISTORY_LIMIT", cfg.AIHistoryLimit)
-	}
+	requireNonEmpty("AI_PROVIDER", cfg.AIProvider)
+	requireNonEmpty("AI_MODEL", cfg.AIModel)
+	requireNonEmpty("AI_API_KEY", cfg.AIAPIKey)
+	requireNonEmpty("AI_SYSTEM_PROMPT_PATH", cfg.AISystemPromptPath)
+	requirePositive("AI_TIMEOUT_SEC", cfg.AITimeoutSec)
 
 	return &cfg
 }

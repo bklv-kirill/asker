@@ -20,20 +20,14 @@ func NewTelegramUsersSQLiteRepo(db *sql.DB) Repository {
 	return &telegramUsersSQLiteRepo{db: db}
 }
 
-func (r *telegramUsersSQLiteRepo) Create(
-	ctx context.Context,
-	telegramUserID int64,
-	firstName string,
-	lastName *string,
-	username *string,
-) (int64, error) {
+func (r *telegramUsersSQLiteRepo) Create(ctx context.Context, m models.TelegramUserCreate) (int64, error) {
 	// user_id передаём явным NULL, чтобы порядок колонок в INSERT соответствовал
 	// порядку в схеме (user_id перед telegram_user_id). Запись users появится
 	// позже — через SetUserIDByTelegramUserID, когда юзер привяжет номер.
 	result, err := r.db.ExecContext(
 		ctx,
 		`INSERT INTO telegram_users (user_id, telegram_user_id, first_name, last_name, username) VALUES (?, ?, ?, ?, ?)`,
-		sql.NullInt64{}, telegramUserID, firstName, ptrToNullString(lastName), ptrToNullString(username),
+		sql.NullInt64{}, m.TelegramUserID, m.FirstName, ptrToNullString(m.LastName), ptrToNullString(m.Username),
 	)
 	if err != nil {
 		return 0, errors.Join(ErrCreate, err)
@@ -64,7 +58,7 @@ func (r *telegramUsersSQLiteRepo) ExistsByTelegramUserID(ctx context.Context, te
 	return exists == 1, nil
 }
 
-func (r *telegramUsersSQLiteRepo) GetByTelegramUserID(ctx context.Context, telegramUserID int64) (*models.TelegramUser, error) {
+func (r *telegramUsersSQLiteRepo) GetByTelegramUserID(ctx context.Context, telegramUserID int64) (models.TelegramUser, error) {
 	var (
 		id        int64
 		userID    sql.NullInt64
@@ -84,13 +78,13 @@ func (r *telegramUsersSQLiteRepo) GetByTelegramUserID(ctx context.Context, teleg
 		telegramUserID,
 	).Scan(&id, &userID, &tgUserID, &firstName, &lastName, &username, &createdAt, &updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
+		return models.TelegramUser{}, ErrNotFound
 	}
 	if err != nil {
-		return nil, errors.Join(ErrGetByTelegramUserID, err)
+		return models.TelegramUser{}, errors.Join(ErrGetByTelegramUserID, err)
 	}
 
-	return &models.TelegramUser{
+	return models.TelegramUser{
 		ID:             id,
 		UserID:         nullInt64ToPtr(userID),
 		TelegramUserID: tgUserID,
