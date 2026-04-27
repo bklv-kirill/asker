@@ -23,6 +23,7 @@ func (t *TelegramBot) handleSetupProfile(ctx context.Context, b *bot.Bot, update
 	var messageID int64 = int64(update.Message.ID)
 
 	t.clearPendingInput(from.ID)
+	t.dropUserDebounce(from.ID)
 
 	t.CreateNewTelegramUserIfNotExists(ctx, from)
 

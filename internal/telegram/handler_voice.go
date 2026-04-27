@@ -21,8 +21,14 @@ var (
 )
 
 // handleVoice — обработчик голосовых сообщений (matchMessageVoice). После
-// успешной транскрибации вход равен текстовому сообщению — дальше идёт
-// общий ассистент-флоу через processAssistantTurn.
+// успешной транскрибации расшифровка кладётся в общий дебаунс-воркер
+// (как и текстовые сообщения через handleAssistant) — там она будет
+// склеена с другими подоспевшими реплейками и обработана через
+// processAssistantTurn по истечении окна debounceWindow.
+//
+// Typing запускается ДО скачивания аудио (STT занимает время, юзеру
+// важен сигнал «бот работает») и останавливается перед передачей в
+// дебаунс — дальше voorker сам управляет typing'ом.
 //
 // Шаги:
 //  1. CreateNewTelegramUserIfNotExists — страховка на случай голоса до /start.
@@ -37,7 +43,7 @@ var (
 //     «не получилось распознать», voice_in не пишется.
 //  6. voice_in в журнал (Text = расшифровка) — единый event, симметрично
 //     message_in для текстового потока.
-//  7. processAssistantTurn — общий хвост (профиль/история/LLM/ответ).
+//  7. submitToDebounce — расшифровка идёт в общий per-user воркер.
 func (t *TelegramBot) handleVoice(ctx context.Context, b *bot.Bot, update *tgmodels.Update) {
 	if update.Message == nil || update.Message.From == nil || update.Message.Voice == nil {
 		return
@@ -126,7 +132,9 @@ func (t *TelegramBot) handleVoice(ctx context.Context, b *bot.Bot, update *tgmod
 		Text:              transcript,
 	})
 
-	t.processAssistantTurn(ctx, b, from, chatID, *tgUser.UserID, transcript)
+	stopTyping()
+
+	t.submitToDebounce(b, from, chatID, *tgUser.UserID, transcript)
 }
 
 // downloadVoice достаёт voice-файл с серверов Telegram и возвращает его как

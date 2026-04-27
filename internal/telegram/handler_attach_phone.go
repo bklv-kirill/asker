@@ -25,6 +25,7 @@ func (t *TelegramBot) handleAttachPhone(ctx context.Context, b *bot.Bot, update 
 	var from *tgmodels.User = &query.From
 
 	t.clearPendingInput(from.ID)
+	t.dropUserDebounce(from.ID)
 
 	// chat_id и message_id из исходного сообщения с inline-кнопкой —
 	// они нужны и для EditMessageReplyMarkup, и для нового SendMessage.

@@ -33,6 +33,7 @@ func (t *TelegramBot) handleStart(ctx context.Context, b *bot.Bot, update *tgmod
 	var messageID int64 = int64(update.Message.ID)
 
 	t.clearPendingInput(from.ID)
+	t.dropUserDebounce(from.ID)
 
 	// Сначала пробуем достать существующую запись — она нужна, чтобы
 	// различить «новый», «возвратившийся без номера» и «возвратившийся

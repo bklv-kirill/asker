@@ -14,8 +14,10 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-telegram/bot"
 	tgmodels "github.com/go-telegram/bot/models"
@@ -137,6 +139,33 @@ type TelegramBot struct {
 	// для текущего масштаба приемлемо.
 	pendingMu    sync.RWMutex
 	pendingInput map[int64]string
+
+	// debounce* — координация per-user дебаунс-воркеров. Полная механика —
+	// в debounce.go. Ключ map'ы — telegram_user_id (from.ID), а не users.id:
+	// dropUserDebounce вызывается в callback/command хендлерах, где доступен
+	// только TG-id. WaitGroup используется для graceful-shutdown в Start.
+	debounceMu      sync.Mutex
+	debounceWorkers map[int64]*userWorker
+	debounceWG      sync.WaitGroup
+
+	// rootCtx — root-контекст приложения, сохранённый при входе в Start.
+	// Используется воркерами дебаунса ТОЛЬКО как сигнал «пора выходить»
+	// (отменяется на SIGINT/SIGTERM из main). НЕ передаётся в LLM/SendMessage —
+	// иначе при Ctrl+C in-flight HTTP-запрос к провайдеру и последующая
+	// отправка ответа юзеру падают с context.Canceled (см. processCtx).
+	rootCtx context.Context
+
+	// processCtx — независимый от rootCtx контекст для in-flight операций
+	// внутри turn'а (LLM-запрос, SendMessage, запись в БД). Создаётся в
+	// Start через context.WithCancel(context.Background()) — НЕ наследует
+	// отмену signal-context'а. Это даёт graceful-shutdown: после SIGINT
+	// b.Start выходит, shutdownDebounce ждёт WaitGroup до
+	// debounceShutdownTimeout — на это время воркеры успевают дотянуть
+	// текущий LLM-вызов и отправить ответ. По истечении таймаута
+	// shutdownDebounce зовёт processCancel — тогда уже HTTP-вызовы
+	// прерываются принудительно, in-memory буферы теряются.
+	processCtx    context.Context
+	processCancel context.CancelFunc
 }
 
 func NewTelegramBot(
@@ -171,6 +200,8 @@ func NewTelegramBot(
 		sttMaxDurationSec: sttMaxDurationSec,
 
 		pendingInput: make(map[int64]string),
+
+		debounceWorkers: make(map[int64]*userWorker),
 	}
 }
 
@@ -206,9 +237,32 @@ func (t *TelegramBot) clearPendingInput(telegramUserID int64) {
 }
 
 // Start инициализирует клиента Bot API, регистрирует обработчики и запускает
-// long-polling. Блокирует вызывающего, пока ctx не будет отменён.
+// long-polling. Блокирует вызывающего, пока ctx не будет отменён. После
+// возврата из b.Start ждёт graceful-завершения дебаунс-воркеров до
+// debounceShutdownTimeout — это даёт текущим LLM-вызовам шанс завершиться
+// и доставить ответ юзеру до выхода из main. processCtx (отдельный от
+// rootCtx) живёт всё время Start и отменяется в shutdownDebounce — именно
+// он передаётся в LLM/SendMessage, чтобы Ctrl+C не убивал in-flight turn.
 func (t *TelegramBot) Start(ctx context.Context) error {
-	b, err := bot.New(t.token, bot.WithDefaultHandler(t.handleAssistant))
+	t.rootCtx = ctx
+	t.processCtx, t.processCancel = context.WithCancel(context.Background())
+
+	// pollTimeout = 5s. Дефолт библиотеки go-telegram/bot — 1 минута: при
+	// SIGINT в момент idle long-poll'а Start блокируется, ожидая отмены
+	// HTTP-запроса через прокси (на этом хосте — обязательный российский
+	// прокси, отмена через него идёт неохотно, реальный наблюдаемый
+	// idle-shutdown ~46s). 5s — компромисс: ~12 RPS к api.telegram.org
+	// при простое (терпимо), idle-shutdown укладывается в ~5s.
+	// Активный long-poll сам разрывается при ctx.Done через transport,
+	// timeout — это «верхняя граница» для случаев, когда отмена не дошла.
+	var pollTimeout time.Duration = 5 * time.Second
+	var httpClient *http.Client = &http.Client{Timeout: pollTimeout}
+
+	b, err := bot.New(
+		t.token,
+		bot.WithDefaultHandler(t.handleAssistant),
+		bot.WithHTTPClient(pollTimeout, httpClient),
+	)
 	if err != nil {
 		return errors.Join(ErrInitBot, err)
 	}
@@ -233,6 +287,8 @@ func (t *TelegramBot) Start(ctx context.Context) error {
 	b.RegisterHandlerMatchFunc(matchMessageVoice, t.handleVoice)
 
 	b.Start(ctx)
+
+	t.shutdownDebounce(debounceShutdownTimeout)
 
 	return nil
 }

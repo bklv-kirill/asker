@@ -25,6 +25,7 @@ func (t *TelegramBot) handleProfileSetAge(ctx context.Context, b *bot.Bot, updat
 	var from *tgmodels.User = &query.From
 
 	t.clearPendingInput(from.ID)
+	t.dropUserDebounce(from.ID)
 
 	var chatID int64
 	var messageID int

@@ -34,6 +34,8 @@ func (t *TelegramBot) handlePendingInput(ctx context.Context, b *bot.Bot, update
 		return
 	}
 
+	t.dropUserDebounce(from.ID)
+
 	t.CreateNewTelegramUserIfNotExists(ctx, from)
 
 	t.LogTelegramEvent(ctx, from, telegramEventPayload{

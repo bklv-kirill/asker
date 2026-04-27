@@ -40,17 +40,23 @@ const (
 const typingRefreshInterval = 4 * time.Second
 
 // handleAssistant — default-обработчик: на любое текстовое сообщение,
-// не пойманное специализированными хендлерами, отвечает через LLM.
+// не пойманное специализированными хендлерами, кладёт текст в per-user
+// дебаунс-воркер и сразу возвращается. Воркер по истечении окна
+// debounceWindow склеит накопленные сообщения и вызовет
+// processAssistantTurn — это даёт сериализацию параллельных LLM-вызовов
+// одного юзера и убирает «лесенку» из нескольких ответов на серию
+// быстрых сообщений (см. debounce.go).
+//
 // Шаги:
 //  1. CreateNewTelegramUserIfNotExists — страховка на случай общения без /start.
-//  2. message_in — журнал входящего.
+//  2. message_in — журнал входящего (ОДНО событие на физическое сообщение
+//     от TG, даже если оно склеится с другими внутри воркера; это сырой
+//     журнал TG-активности).
 //  3. Lookup telegram_users → если user_id IS NULL, юзер не привязал номер:
-//     отвечаем подсказкой «привяжи номер» с inline-кнопкой и выходим.
-//     Ассистент работает только для пользователей с привязанным номером
-//     (запись в users появляется только после контакта; chat_messages
-//     завязан на users.id).
-//  4. processAssistantTurn — общий хвост (профиль/история/LLM/ответ);
-//     переиспользуется handler_voice.go после успешной транскрибации.
+//     отвечаем подсказкой «привяжи номер» с inline-кнопкой и выходим
+//     (в дебаунс не идём — ассистент работает только для привязанных).
+//  4. submitToDebounce — non-blocking push в канал воркера. Дальнейшая
+//     обработка (профиль/история/LLM/ответ) — асинхронно в воркере.
 func (t *TelegramBot) handleAssistant(ctx context.Context, b *bot.Bot, update *tgmodels.Update) {
 	if update.Message == nil || update.Message.From == nil || update.Message.Text == "" {
 		return
@@ -96,23 +102,85 @@ func (t *TelegramBot) handleAssistant(ctx context.Context, b *bot.Bot, update *t
 		return
 	}
 
-	t.processAssistantTurn(ctx, b, from, chatID, *tgUser.UserID, text)
+	t.submitToDebounce(b, from, chatID, *tgUser.UserID, text)
+}
+
+// startTyping запускает фоновую горутину, которая шлёт `sendChatAction:typing`
+// в чат сразу и затем каждые typingRefreshInterval, пока возвращаемый
+// CancelFunc не будет вызван. Это даёт пользователю индикатор «печатает...»
+// пока ассистент думает над ответом. Telegram держит анимацию ~5 секунд
+// после каждого вызова — переобновляем за секунду до истечения.
+//
+// Возврат — context.CancelFunc; вызывающий обязан вызвать её (через defer
+// или явно), иначе горутина продолжит дёргать Telegram до отмены родительского
+// ctx. CancelFunc идемпотентна — двойной вызов безопасен.
+//
+// Ошибки SendChatAction логируются (кроме отмены контекста — это штатная
+// остановка); UX-индикатор не критичен, чтобы из-за него ронять основной
+// сценарий.
+func (t *TelegramBot) startTyping(ctx context.Context, b *bot.Bot, chatID int64) context.CancelFunc {
+	typingCtx, cancel := context.WithCancel(ctx)
+
+	go func() {
+		t.sendTypingAction(typingCtx, b, chatID)
+
+		var ticker *time.Ticker = time.NewTicker(typingRefreshInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-typingCtx.Done():
+				return
+			case <-ticker.C:
+				t.sendTypingAction(typingCtx, b, chatID)
+			}
+		}
+	}()
+
+	return cancel
+}
+
+// sendTypingAction шлёт один `sendChatAction:typing` и проглатывает
+// context.Canceled (штатная остановка startTyping). Прочие ошибки
+// логируются — но индикатор не критичен, ничего больше не делаем.
+func (t *TelegramBot) sendTypingAction(ctx context.Context, b *bot.Bot, chatID int64) {
+	_, err := b.SendChatAction(ctx, &bot.SendChatActionParams{
+		ChatID: chatID,
+		Action: tgmodels.ChatActionTyping,
+	})
+	if err != nil && !errors.Is(err, context.Canceled) {
+		t.logger.Error("send chat action typing", "err", err, "chat_id", chatID)
+	}
 }
 
 // processAssistantTurn — общий ассистент-флоу для уже привязанного пользователя.
-// Используется handleAssistant (текст) и handleVoice (после успешной транскрибации).
+// Вызывается ТОЛЬКО из дебаунс-воркера (см. runUserWorker в debounce.go),
+// который сам управляет typing-индикатором: typing стартует на первом
+// push'е в воркер и останавливается после возврата из этой функции.
+// Поэтому здесь typing не дёргаем — иначе будет дубль и моргание индикатора.
 //
 // Шаги:
 //  1. Загрузка профиля (users.GetByID) — нужен для buildAssistantPrompt.
-//  2. История диалога (chat_messages.GetLast) ДО записи текущего вопроса —
-//     вариант A контракта: история без current question.
-//  3. Запись текущего вопроса (chat_messages.Create, role=user).
-//  4. Сборка prompt'а (профиль + история + вопрос) и вызов llm.Prompt —
+//  2. История диалога (chat_messages.GetLast) — вариант A контракта:
+//     история без current question.
+//  3. Сборка prompt'а из (профиль + история + text) и вызов llm.Prompt —
 //     таймаут уважает реализация провайдера (context.WithTimeout по AI_TIMEOUT_SEC).
-//  5. Запись ответа (chat_messages.Create, role=assistant). Best-effort:
-//     если запись упала — отдаём ответ юзеру и логируем сбой; на следующем
-//     запросе history будет короче, но UX не блокируется.
-//  6. Чанкованная отправка (splitForTelegram режет >4096 рун по \n / ". "
+//     Запись текущего вопроса в chat_messages НЕ делаем до успешного ответа
+//     LLM: иначе при сбое LLM в истории остался бы вопрос без ответа,
+//     и следующий turn увидел бы «рваную» пару. Цена выбора — на следующем
+//     turn'е в истории не будет видно неудавшегося вопроса; это сознательно.
+//  4. После успешного LLM пишем ОБЕ записи подряд: сначала role=user (БД
+//     проставит более ранний created_at благодаря порядку INSERT'ов и
+//     CURRENT_TIMESTAMP), затем role=assistant. Если воркер склеил
+//     несколько физических сообщений — text уже содержит склейку через
+//     "\n\n", в БД пишется одной записью (один turn = одна запись user,
+//     иначе LLM-история становится рваной).
+//     Сохранение user — обязательное: при сбое отдаём ошибку и НЕ шлём
+//     ответ, чтобы не получить обратную асимметрию «ответ без вопроса».
+//     Сохранение assistant — best-effort: при сбое логируем и всё равно
+//     отдаём ответ юзеру (UX важнее одной потерянной строки истории;
+//     на следующем turn'е в истории будет вопрос без ответа — приемлемо).
+//  5. Чанкованная отправка (splitForTelegram режет >4096 рун по \n / ". "
 //     в окне [3500..4096]); message_out пишется ОДИН раз с id последнего
 //     отправленного сообщения и полным текстом — концептуально это один
 //     логический ответ ассистента, даже если технически пришло несколько частей.
@@ -143,6 +211,16 @@ func (t *TelegramBot) processAssistantTurn(ctx context.Context, b *bot.Bot, from
 		return
 	}
 
+	var prompt ai.Prompt = buildAssistantPrompt(user, history, text)
+
+	answer, err := t.llm.Prompt(ctx, prompt)
+	if err != nil {
+		t.logger.Error("llm prompt", "err", err, "user_id", userID)
+		t.sendAssistantText(ctx, b, from, chatID, "❌ Не получилось получить ответ от ассистента. Попробуй позже.", nil)
+
+		return
+	}
+
 	_, err = t.chatMessages.Create(ctx, models.ChatMessageCreate{
 		UserID:  userID,
 		Role:    models.ChatMessageRoleUser,
@@ -151,20 +229,6 @@ func (t *TelegramBot) processAssistantTurn(ctx context.Context, b *bot.Bot, from
 	if err != nil {
 		t.logger.Error("chat_messages create user", "err", err, "user_id", userID)
 		t.sendAssistantText(ctx, b, from, chatID, "❌ Не получилось сохранить сообщение. Попробуй позже.", nil)
-
-		return
-	}
-
-	var prompt ai.Prompt = buildAssistantPrompt(user, history, text)
-
-	var stopTyping context.CancelFunc = t.startTyping(ctx, b, chatID)
-	defer stopTyping()
-
-	answer, err := t.llm.Prompt(ctx, prompt)
-	stopTyping()
-	if err != nil {
-		t.logger.Error("llm prompt", "err", err, "user_id", userID)
-		t.sendAssistantText(ctx, b, from, chatID, "❌ Не получилось получить ответ от ассистента. Попробуй позже.", nil)
 
 		return
 	}
@@ -251,54 +315,6 @@ func (t *TelegramBot) sendAssistantChunked(ctx context.Context, b *bot.Bot, from
 		TelegramMessageID: int64(lastMessageID),
 		Text:              text,
 	})
-}
-
-// startTyping запускает фоновую горутину, которая шлёт `sendChatAction:typing`
-// в чат сразу и затем каждые typingRefreshInterval, пока возвращаемый
-// CancelFunc не будет вызван. Это даёт пользователю индикатор «печатает...»
-// пока ассистент думает над ответом. Telegram держит анимацию ~5 секунд
-// после каждого вызова — переобновляем за секунду до истечения.
-//
-// Возврат — context.CancelFunc; вызывающий обязан вызвать её (через defer
-// или явно), иначе горутина продолжит дёргать Telegram до отмены родительского
-// ctx. CancelFunc идемпотентна — двойной вызов безопасен.
-//
-// Ошибки SendChatAction логируются (кроме отмены контекста — это штатная
-// остановка); UX-индикатор не критичен, чтобы из-за него ронять основной
-// сценарий.
-func (t *TelegramBot) startTyping(ctx context.Context, b *bot.Bot, chatID int64) context.CancelFunc {
-	typingCtx, cancel := context.WithCancel(ctx)
-
-	go func() {
-		t.sendTypingAction(typingCtx, b, chatID)
-
-		var ticker *time.Ticker = time.NewTicker(typingRefreshInterval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-typingCtx.Done():
-				return
-			case <-ticker.C:
-				t.sendTypingAction(typingCtx, b, chatID)
-			}
-		}
-	}()
-
-	return cancel
-}
-
-// sendTypingAction шлёт один `sendChatAction:typing` и проглатывает
-// context.Canceled (штатная остановка startTyping). Прочие ошибки
-// логируются — но индикатор не критичен, ничего больше не делаем.
-func (t *TelegramBot) sendTypingAction(ctx context.Context, b *bot.Bot, chatID int64) {
-	_, err := b.SendChatAction(ctx, &bot.SendChatActionParams{
-		ChatID: chatID,
-		Action: tgmodels.ChatActionTyping,
-	})
-	if err != nil && !errors.Is(err, context.Canceled) {
-		t.logger.Error("send chat action typing", "err", err, "chat_id", chatID)
-	}
 }
 
 // buildAssistantPrompt сериализует профиль пользователя + историю диалога

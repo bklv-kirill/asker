@@ -33,6 +33,7 @@ func (t *TelegramBot) handleMyProfile(ctx context.Context, b *bot.Bot, update *t
 	var messageID int64 = int64(update.Message.ID)
 
 	t.clearPendingInput(from.ID)
+	t.dropUserDebounce(from.ID)
 
 	t.CreateNewTelegramUserIfNotExists(ctx, from)
 
