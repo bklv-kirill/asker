@@ -22,19 +22,19 @@ import (
 	"github.com/bklv-kirill/asker/internal/services/ai"
 )
 
+var (
+	ErrRequest = errors.New("openrouter: request")
+	ErrStatus  = errors.New("openrouter: status")
+	ErrParse   = errors.New("openrouter: parse")
+	ErrEmpty   = errors.New("openrouter: empty response")
+)
+
 const (
 	providerName    = "openrouter"
 	apiURL          = "https://openrouter.ai/api/v1/chat/completions"
 	roleSystem      = "system"
 	roleUser        = "user"
 	contentTypeJSON = "application/json"
-)
-
-var (
-	ErrRequest = errors.New("openrouter: request")
-	ErrStatus  = errors.New("openrouter: status")
-	ErrParse   = errors.New("openrouter: parse")
-	ErrEmpty   = errors.New("openrouter: empty response")
 )
 
 type openrouter struct {

@@ -108,10 +108,10 @@ func (c *claudeCodeCLI) Prompt(ctx context.Context, prompt ai.Prompt) (string, e
 	defer cancel()
 
 	select {
-		case c.sem <- struct{}{}:
-			defer func() { <-c.sem }()
-		case <-reqCtx.Done():
-			return "", errors.Join(ErrAcquire, reqCtx.Err())
+	case c.sem <- struct{}{}:
+		defer func() { <-c.sem }()
+	case <-reqCtx.Done():
+		return "", errors.Join(ErrAcquire, reqCtx.Err())
 	}
 
 	var args []string = []string{
