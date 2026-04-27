@@ -8,6 +8,17 @@ tmp_dir = "tmp"
   exclude_dir = ["tmp", "vendor", ".git", ".claude"]
   delay = 1000
   stop_on_error = true
+  # send_interrupt + kill_delay — критично для graceful shutdown:
+  # без них air шлёт SIGKILL в Go-бинарник сразу при rebuild/SIGTERM
+  # и весь shutdownDebounce внутри процесса не успевает отработать —
+  # in-flight LLM-вызов рубится, юзер не получает ответ.
+  # SIGINT даёт main.go signal.NotifyContext шанс отменить rootCtx,
+  # дотянуть turn через processCtx и доставить ответ.
+  # kill_delay >= debounceShutdownTimeout (360s сейчас) + запас на GC,
+  # закрытие БД, graceful exit из b.Start; compose stop_grace_period
+  # должен быть БОЛЬШЕ kill_delay.
+  send_interrupt = true
+  kill_delay = "365s"
 
 [log]
   time = false

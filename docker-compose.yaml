@@ -4,7 +4,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    working_dir: /app
+    init: true
+    stop_grace_period: 375s
     volumes:
       - ./:/app
       - ./data:/data
