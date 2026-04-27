@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS telegram_users (
     -- конфликтуют между собой. ON DELETE SET NULL: если запись users
     -- удалена (например, по запросу на забвение) — TG-связь сбрасывается,
     -- но сам telegram_users остаётся (журнал событий не теряется).
+    -- Скрипт scripts/delete_user.sh при необходимости полного удаления
+    -- сносит привязанный telegram_users явным вторым DELETE — каскадом
+    -- через FK схема намеренно этого не делает.
     user_id           INTEGER  UNIQUE REFERENCES users(id) ON DELETE SET NULL,
     -- ID аккаунта в Telegram (update.Message.From.ID). Может быть большим — int64
     -- вмещается в SQLite INTEGER. UNIQUE: один TG-аккаунт = одна запись.
