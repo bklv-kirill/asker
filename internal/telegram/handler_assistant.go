@@ -175,10 +175,17 @@ func (t *TelegramBot) handleAssistant(ctx context.Context, b *bot.Bot, update *t
 // sendAssistantText — короткий ответ (служебные сообщения, ошибки,
 // напоминание привязать номер). Один SendMessage + один message_out.
 // replyMarkup — nil или, например, attachPhoneInlineMarkup().
+//
+// ParseMode=HTML: служебные тексты не содержат HTML-тегов, но Telegram
+// в HTML-режиме всё равно требует, чтобы свободные символы `<`, `>`, `&`
+// были как обычные слова. В нашем случае служебные строки их не содержат,
+// поэтому конфликтов нет; единый ParseMode держим, чтобы не переключать
+// между сообщениями ассистента и сообщениями LLM.
 func (t *TelegramBot) sendAssistantText(ctx context.Context, b *bot.Bot, from *tgmodels.User, chatID int64, text string, replyMarkup any) {
 	msg, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      chatID,
 		Text:        text,
+		ParseMode:   tgmodels.ParseModeHTML,
 		ReplyMarkup: replyMarkup,
 	})
 	if err != nil {
@@ -198,9 +205,13 @@ func (t *TelegramBot) sendAssistantText(ctx context.Context, b *bot.Bot, from *t
 // sendAssistantChunked отправляет ответ LLM пачками, если он длиннее
 // chunkMaxRunes; каждая пачка — отдельный SendMessage. В журнале
 // telegram_events пишем ОДНО событие message_out с id последнего
-// отправленного сообщения и полным текстом ответа. Сообщение шлётся
-// без ParseMode — system prompt запрещает LLM любую разметку, поэтому
-// текст уходит «как есть» и Telegram ничего не парсит.
+// отправленного сообщения и полным текстом ответа. ParseMode=HTML —
+// system prompt разрешает LLM ровно один тег `<b>...</b>` для выделения
+// (никаких других тегов и markdown-маркеров), а сырые `<`, `>`, `&` в
+// обычном тексте промпт запрещает. Если LLM нарушит контракт и эмитит
+// невалидный HTML — Telegram вернёт 400 «can't parse entities»; ловим
+// в логах, fallback на plain text сознательно не делаем (правило проекта —
+// fail-fast, чтобы баги в промпте всплыли, а не маскировались).
 func (t *TelegramBot) sendAssistantChunked(ctx context.Context, b *bot.Bot, from *tgmodels.User, chatID int64, text string) {
 	var chunks []string = splitForTelegram(text)
 	if len(chunks) == 0 {
@@ -210,8 +221,9 @@ func (t *TelegramBot) sendAssistantChunked(ctx context.Context, b *bot.Bot, from
 	var lastMessageID int
 	for _, chunk := range chunks {
 		msg, err := b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatID,
-			Text:   chunk,
+			ChatID:    chatID,
+			Text:      chunk,
+			ParseMode: tgmodels.ParseModeHTML,
 		})
 		if err != nil {
 			t.logger.Error("send assistant chunk", "err", err, "chat_id", chatID)
