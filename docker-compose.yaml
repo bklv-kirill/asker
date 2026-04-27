@@ -9,6 +9,8 @@ services:
       - ./:/app
       - ./data:/data
       - ./prompts:/prompts:ro
+      - ./data/claude-bot:/root/.claude
+      - ./data/claude-bot.json:/root/.claude.json
       - go_mod_cache:/go/pkg/mod
     environment:
       APP_NAME: ${APP_NAME}
