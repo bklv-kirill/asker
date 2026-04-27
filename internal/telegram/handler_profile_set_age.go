@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
+	tgmodels "github.com/go-telegram/bot/models"
 )
 
 // handleProfileSetAge — обработчик inline-кнопки «🎂 Указать возраст» из
@@ -16,21 +16,21 @@ import (
 // Кнопки исходного меню «Настроить профиль» НЕ убираются — юзер может
 // передумать и выбрать другое поле; в этом случае их хендлеры (handleProfile*)
 // сами вызовут clearPendingInput и age-flow забудется.
-func (t *TelegramBot) handleProfileSetAge(ctx context.Context, b *bot.Bot, update *models.Update) {
+func (t *TelegramBot) handleProfileSetAge(ctx context.Context, b *bot.Bot, update *tgmodels.Update) {
 	if update.CallbackQuery == nil {
 		return
 	}
 
-	var query *models.CallbackQuery = update.CallbackQuery
-	var from *models.User = &query.From
+	var query *tgmodels.CallbackQuery = update.CallbackQuery
+	var from *tgmodels.User = &query.From
 
 	t.clearPendingInput(from.ID)
 
 	var chatID int64
-	var sourceMessageID int
+	var messageID int
 	if query.Message.Message != nil {
 		chatID = query.Message.Message.Chat.ID
-		sourceMessageID = query.Message.Message.ID
+		messageID = query.Message.Message.ID
 	} else {
 		t.logger.Error("profile_set_age callback without accessible message", "telegram_user_id", from.ID)
 
@@ -42,7 +42,7 @@ func (t *TelegramBot) handleProfileSetAge(ctx context.Context, b *bot.Bot, updat
 	t.LogTelegramEvent(ctx, from, telegramEventPayload{
 		Event:             eventCallbackIn,
 		ChatID:            chatID,
-		TelegramMessageID: int64(sourceMessageID),
+		TelegramMessageID: int64(messageID),
 		Text:              query.Data,
 	})
 

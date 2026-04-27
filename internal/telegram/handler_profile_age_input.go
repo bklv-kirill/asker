@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
+	tgmodels "github.com/go-telegram/bot/models"
 )
 
 // handleProfileAgeInput — конкретный обработчик ввода возраста, в который
@@ -18,8 +18,8 @@ import (
 // prompt'а; здесь — clearPendingInput на любом терминальном исходе
 // (успех, нет user_id, ошибка БД), кроме невалидного ввода — в этом случае
 // state остаётся, юзер пробует снова.
-func (t *TelegramBot) handleProfileAgeInput(ctx context.Context, b *bot.Bot, from *models.User, chatID int64, inText string) {
-	age, err := strconv.Atoi(strings.TrimSpace(inText))
+func (t *TelegramBot) handleProfileAgeInput(ctx context.Context, b *bot.Bot, from *tgmodels.User, chatID int64, text string) {
+	age, err := strconv.Atoi(strings.TrimSpace(text))
 	if err != nil || age < 1 || age > 120 {
 		t.sendProfileAgeInputReply(ctx, b, from, chatID, "⚠️ Введи число от 1 до 120.")
 
@@ -65,7 +65,7 @@ func (t *TelegramBot) handleProfileAgeInput(ctx context.Context, b *bot.Bot, fro
 // Один шаблон «текст без клавиатуры» + журнал message_out при успехе.
 // Семантика других полей профиля может потребовать другой формат ответа,
 // поэтому хелпер приватный для age, а не общий по всем pending-полям.
-func (t *TelegramBot) sendProfileAgeInputReply(ctx context.Context, b *bot.Bot, from *models.User, chatID int64, text string) {
+func (t *TelegramBot) sendProfileAgeInputReply(ctx context.Context, b *bot.Bot, from *tgmodels.User, chatID int64, text string) {
 	msg, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: chatID,
 		Text:   text,

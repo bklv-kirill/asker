@@ -11,19 +11,19 @@ import (
 
 // handleProfileGender — обработчик inline-кнопок «Мужчина»/«Женщина»
 // (callback_data с префиксом profile_gender_). Шаги:
-//   1) Журнал callback_in (Text = query.Data, чтобы было видно выбранное
-//      значение в БД).
-//   2) AnswerCallbackQuery — убирает спиннер.
-//   3) Lookup tgUser → users.id (через GetByTelegramUserID). Если у юзера
-//      ещё нет привязки (user_id IS NULL) — отвечаем «Сначала привяжи
-//      номер.» и выходим.
-//   4) Маппим query.Data → значение models.Gender (Мужчина/Женщина).
-//      Невалидный data — логируем и выходим (теоретически недостижимо,
-//      MatchTypePrefix отбрасывает чужие).
-//   5) users.SetGender(ctx, *tgUser.UserID, gender).
-//   6) DeleteMessage — удаляет исходное сообщение «Укажи свой пол» целиком,
-//      чтобы не захламлять чат и исключить повторное нажатие.
-//   7) Ответ «✅ Пол сохранён.» отдельным сообщением + журнал message_out.
+//  1. Журнал callback_in (Text = query.Data, чтобы было видно выбранное
+//     значение в БД).
+//  2. AnswerCallbackQuery — убирает спиннер.
+//  3. Lookup tgUser → users.id (через GetByTelegramUserID). Если у юзера
+//     ещё нет привязки (user_id IS NULL) — отвечаем «Сначала привяжи
+//     номер.» и выходим.
+//  4. Маппим query.Data → значение models.Gender (Мужчина/Женщина).
+//     Невалидный data — логируем и выходим (теоретически недостижимо,
+//     MatchTypePrefix отбрасывает чужие).
+//  5. users.SetGender(ctx, *tgUser.UserID, gender).
+//  6. DeleteMessage — удаляет исходное сообщение «Укажи свой пол» целиком,
+//     чтобы не захламлять чат и исключить повторное нажатие.
+//  7. Ответ «✅ Пол сохранён.» отдельным сообщением + журнал message_out.
 //
 // Импорт TG-пакета моделей переименован в tgmodels, чтобы не конфликтовать
 // с нашим internal/models (Gender, User и т.д.) в этом файле.
@@ -38,10 +38,10 @@ func (t *TelegramBot) handleProfileGender(ctx context.Context, b *bot.Bot, updat
 	t.clearPendingInput(from.ID)
 
 	var chatID int64
-	var sourceMessageID int
+	var messageID int
 	if query.Message.Message != nil {
 		chatID = query.Message.Message.Chat.ID
-		sourceMessageID = query.Message.Message.ID
+		messageID = query.Message.Message.ID
 	} else {
 		t.logger.Error("profile_gender callback without accessible message", "telegram_user_id", from.ID, "data", query.Data)
 
@@ -53,7 +53,7 @@ func (t *TelegramBot) handleProfileGender(ctx context.Context, b *bot.Bot, updat
 	t.LogTelegramEvent(ctx, from, telegramEventPayload{
 		Event:             eventCallbackIn,
 		ChatID:            chatID,
-		TelegramMessageID: int64(sourceMessageID),
+		TelegramMessageID: int64(messageID),
 		Text:              query.Data,
 	})
 
@@ -80,14 +80,14 @@ func (t *TelegramBot) handleProfileGender(ctx context.Context, b *bot.Bot, updat
 
 	var gender models.Gender
 	switch query.Data {
-		case profileGenderMaleCallback:
-			gender = models.GenderMale
-		case profileGenderFemaleCallback:
-			gender = models.GenderFemale
-		default:
-			t.logger.Error("profile_gender unexpected callback data", "telegram_user_id", from.ID, "data", query.Data)
+	case profileGenderMaleCallback:
+		gender = models.GenderMale
+	case profileGenderFemaleCallback:
+		gender = models.GenderFemale
+	default:
+		t.logger.Error("profile_gender unexpected callback data", "telegram_user_id", from.ID, "data", query.Data)
 
-			return
+		return
 	}
 
 	err = t.users.SetGender(ctx, *tgUser.UserID, gender)
@@ -106,12 +106,12 @@ func (t *TelegramBot) handleProfileGender(ctx context.Context, b *bot.Bot, updat
 
 	_, err = b.DeleteMessage(ctx, &bot.DeleteMessageParams{
 		ChatID:    chatID,
-		MessageID: sourceMessageID,
+		MessageID: messageID,
 	})
 	if err != nil {
 		// Не критично: сообщение может быть слишком старым, без права edit
 		// и т.п. — UX не блокируем, идём отвечать.
-		t.logger.Error("delete profile_gender source message", "err", err, "chat_id", chatID, "message_id", sourceMessageID)
+		t.logger.Error("delete profile_gender message", "err", err, "chat_id", chatID, "message_id", messageID)
 	}
 
 	t.sendProfileGenderReply(ctx, b, from, chatID, "✅ Пол сохранён.")

@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
+	tgmodels "github.com/go-telegram/bot/models"
 )
 
 // handleProfileInfoInput — конкретный обработчик ввода info, в который
@@ -18,8 +18,8 @@ import (
 // prompt'а; здесь — clearPendingInput на любом терминальном исходе
 // (успех, нет user_id, ошибка БД), кроме невалидного ввода (пустой текст) —
 // в этом случае state остаётся, юзер пробует снова.
-func (t *TelegramBot) handleProfileInfoInput(ctx context.Context, b *bot.Bot, from *models.User, chatID int64, inText string) {
-	var info string = strings.TrimSpace(inText)
+func (t *TelegramBot) handleProfileInfoInput(ctx context.Context, b *bot.Bot, from *tgmodels.User, chatID int64, text string) {
+	var info string = strings.TrimSpace(text)
 	if info == "" {
 		t.sendProfileInfoInputReply(ctx, b, from, chatID, "⚠️ Текст не может быть пустым.")
 
@@ -64,7 +64,7 @@ func (t *TelegramBot) handleProfileInfoInput(ctx context.Context, b *bot.Bot, fr
 // Один шаблон «текст без клавиатуры» + журнал message_out при успехе.
 // Семантика других полей профиля может потребовать другой формат ответа,
 // поэтому хелпер приватный для info, а не общий по всем pending-полям.
-func (t *TelegramBot) sendProfileInfoInputReply(ctx context.Context, b *bot.Bot, from *models.User, chatID int64, text string) {
+func (t *TelegramBot) sendProfileInfoInputReply(ctx context.Context, b *bot.Bot, from *tgmodels.User, chatID int64, text string) {
 	msg, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: chatID,
 		Text:   text,

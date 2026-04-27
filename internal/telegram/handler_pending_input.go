@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
+	tgmodels "github.com/go-telegram/bot/models"
 )
 
 // handlePendingInput — общий matchFunc-обработчик текстового ответа
@@ -19,15 +19,15 @@ import (
 // это общий код для всех сценариев. Значения kind namespace'нуты префиксом
 // домена (`profile.*`), чтобы при добавлении новых сценариев (опросы,
 // модерация) роутинг не путался.
-func (t *TelegramBot) handlePendingInput(ctx context.Context, b *bot.Bot, update *models.Update) {
+func (t *TelegramBot) handlePendingInput(ctx context.Context, b *bot.Bot, update *tgmodels.Update) {
 	if update.Message == nil || update.Message.From == nil || update.Message.Text == "" {
 		return
 	}
 
-	var from *models.User = update.Message.From
+	var from *tgmodels.User = update.Message.From
 	var chatID int64 = update.Message.Chat.ID
-	var inText string = update.Message.Text
-	var inMessageID int64 = int64(update.Message.ID)
+	var text string = update.Message.Text
+	var messageID int64 = int64(update.Message.ID)
 
 	kind, ok := t.getPendingInput(from.ID)
 	if !ok {
@@ -39,15 +39,15 @@ func (t *TelegramBot) handlePendingInput(ctx context.Context, b *bot.Bot, update
 	t.LogTelegramEvent(ctx, from, telegramEventPayload{
 		Event:             eventMessageIn,
 		ChatID:            chatID,
-		TelegramMessageID: inMessageID,
-		Text:              inText,
+		TelegramMessageID: messageID,
+		Text:              text,
 	})
 
 	switch kind {
 	case pendingInputProfileAge:
-		t.handleProfileAgeInput(ctx, b, from, chatID, inText)
+		t.handleProfileAgeInput(ctx, b, from, chatID, text)
 	case pendingInputProfileInfo:
-		t.handleProfileInfoInput(ctx, b, from, chatID, inText)
+		t.handleProfileInfoInput(ctx, b, from, chatID, text)
 	default:
 		t.logger.Error("pending input: unknown kind", "telegram_user_id", from.ID, "kind", kind)
 		t.clearPendingInput(from.ID)

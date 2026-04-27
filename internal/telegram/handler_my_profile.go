@@ -29,8 +29,8 @@ func (t *TelegramBot) handleMyProfile(ctx context.Context, b *bot.Bot, update *t
 
 	var from *tgmodels.User = update.Message.From
 	var chatID int64 = update.Message.Chat.ID
-	var inText string = update.Message.Text
-	var inMessageID int64 = int64(update.Message.ID)
+	var text string = update.Message.Text
+	var messageID int64 = int64(update.Message.ID)
 
 	t.clearPendingInput(from.ID)
 
@@ -39,8 +39,8 @@ func (t *TelegramBot) handleMyProfile(ctx context.Context, b *bot.Bot, update *t
 	t.LogTelegramEvent(ctx, from, telegramEventPayload{
 		Event:             eventMessageIn,
 		ChatID:            chatID,
-		TelegramMessageID: inMessageID,
-		Text:              inText,
+		TelegramMessageID: messageID,
+		Text:              text,
 	})
 
 	tgUser, err := t.telegramUsers.GetByTelegramUserID(ctx, from.ID)

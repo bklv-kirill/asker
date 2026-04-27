@@ -6,31 +6,31 @@ import (
 	"fmt"
 
 	"github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
+	tgmodels "github.com/go-telegram/bot/models"
 
 	telegramUsersRepo "github.com/bklv-kirill/asker/internal/repository/telegram_users"
 )
 
 // handleStart — обработчик /start. Различает три состояния:
-//   1) Пользователь новый или возвратившийся, но НЕ привязал номер →
-//      приветствие + предложение привязать номер с inline-кнопкой
-//      «Привязать номер» (callback_data = attachPhoneCallbackData).
-//   2) Возвратившийся, номер уже привязан → короткое «Рад тебя снова видеть!».
-//   3) Получение записи telegram_users упало с реальным сбоем → идём по
-//      ветке «новый пользователь» (без блокировки UX), повторно создаём
-//      идемпотентно.
+//  1. Пользователь новый или возвратившийся, но НЕ привязал номер →
+//     приветствие + предложение привязать номер с inline-кнопкой
+//     «Привязать номер» (callback_data = attachPhoneCallbackData).
+//  2. Возвратившийся, номер уже привязан → короткое «Рад тебя снова видеть!».
+//  3. Получение записи telegram_users упало с реальным сбоем → идём по
+//     ветке «новый пользователь» (без блокировки UX), повторно создаём
+//     идемпотентно.
 //
 // Все шаги фиксируются в журнале telegram_events: command_in для самой
 // команды и message_out для ответа бота (после успешной отправки).
-func (t *TelegramBot) handleStart(ctx context.Context, b *bot.Bot, update *models.Update) {
+func (t *TelegramBot) handleStart(ctx context.Context, b *bot.Bot, update *tgmodels.Update) {
 	if update.Message == nil || update.Message.From == nil {
 		return
 	}
 
-	var from *models.User = update.Message.From
+	var from *tgmodels.User = update.Message.From
 	var chatID int64 = update.Message.Chat.ID
-	var inText string = update.Message.Text
-	var inMessageID int64 = int64(update.Message.ID)
+	var text string = update.Message.Text
+	var messageID int64 = int64(update.Message.ID)
 
 	t.clearPendingInput(from.ID)
 
@@ -50,8 +50,8 @@ func (t *TelegramBot) handleStart(ctx context.Context, b *bot.Bot, update *model
 	t.LogTelegramEvent(ctx, from, telegramEventPayload{
 		Event:             eventCommandIn,
 		ChatID:            chatID,
-		TelegramMessageID: inMessageID,
-		Text:              inText,
+		TelegramMessageID: messageID,
+		Text:              text,
 	})
 
 	var (
@@ -60,15 +60,15 @@ func (t *TelegramBot) handleStart(ctx context.Context, b *bot.Bot, update *model
 	)
 
 	switch {
-		case found && tgUser.UserID != nil:
-			replyText = fmt.Sprintf("👋 Рад тебя снова видеть, %s!\n\nℹ️ Номер телефона уже привязан.", from.FirstName)
-			replyMarkup = profileSettingsKeyboard()
-		case found:
-			replyText = fmt.Sprintf("👋 Рад тебя снова видеть, %s!\n\n📱 Для более точных ответов можешь привязать свой номер телефона и настроить профиль.", from.FirstName)
-			replyMarkup = attachPhoneInlineMarkup()
-		default:
-			replyText = fmt.Sprintf("👋 Привет, %s! Я %s.\n\n📱 Для более точных ответов можешь привязать свой номер телефона и настроить профиль.", from.FirstName, t.botName)
-			replyMarkup = attachPhoneInlineMarkup()
+	case found && tgUser.UserID != nil:
+		replyText = fmt.Sprintf("👋 Рад тебя снова видеть, %s!\n\nℹ️ Номер телефона уже привязан.", from.FirstName)
+		replyMarkup = profileSettingsKeyboard()
+	case found:
+		replyText = fmt.Sprintf("👋 Рад тебя снова видеть, %s!\n\n📱 Чтобы начать общение привяжи свой номер телефона.", from.FirstName)
+		replyMarkup = attachPhoneInlineMarkup()
+	default:
+		replyText = fmt.Sprintf("👋 Привет, %s! Я %s.\n\n📱 Чтобы начать общение привяжи свой номер телефона.", from.FirstName, t.botName)
+		replyMarkup = attachPhoneInlineMarkup()
 	}
 
 	msg, err := b.SendMessage(ctx, &bot.SendMessageParams{
@@ -88,17 +88,4 @@ func (t *TelegramBot) handleStart(ctx context.Context, b *bot.Bot, update *model
 		TelegramMessageID: int64(msg.ID),
 		Text:              replyText,
 	})
-}
-
-// attachPhoneInlineMarkup собирает inline-клавиатуру с одной кнопкой
-// «Привязать номер». При нажатии TG присылает CallbackQuery с
-// data = attachPhoneCallbackData — его ловит handleAttachPhone.
-func attachPhoneInlineMarkup() models.InlineKeyboardMarkup {
-	return models.InlineKeyboardMarkup{
-		InlineKeyboard: [][]models.InlineKeyboardButton{
-			{
-				{Text: "📱 Привязать номер", CallbackData: attachPhoneCallbackData},
-			},
-		},
-	}
 }

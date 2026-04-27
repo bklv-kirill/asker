@@ -5,38 +5,38 @@ import (
 	"errors"
 
 	"github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
+	tgmodels "github.com/go-telegram/bot/models"
 
 	usersRepo "github.com/bklv-kirill/asker/internal/repository/users"
 )
 
 // handleContact срабатывает на любое сообщение с полем Contact (юзер
 // поделился номером через кнопку request_contact). Сценарий привязки:
-//   1) Журнал contact_in (Phone в Text payload).
-//   2) Защита: Contact.UserID должен совпадать с From.ID — иначе номер
-//      чужой (например, пересланный контакт), отказываем.
-//   3) Защита: если у этого telegram_users уже есть user_id — отвечаем
-//      «у тебя уже привязан номер» и оставляем клавиатуру с «Настроить
-//      профиль» (юзер уже считается привязанным).
-//   4) users.Create(FirstName, normalizedPhone). UNIQUE-конфликт по phone
-//      различается через ErrPhoneTaken.
-//   5) telegramUsers.SetUserIDByTelegramUserID — проставляем связь.
-//   6) Ответ «Спасибо! Номер привязан.» с reply-keyboard «Настроить профиль».
+//  1. Журнал contact_in (Phone в Text payload).
+//  2. Защита: Contact.UserID должен совпадать с From.ID — иначе номер
+//     чужой (например, пересланный контакт), отказываем.
+//  3. Защита: если у этого telegram_users уже есть user_id — отвечаем
+//     «у тебя уже привязан номер» и оставляем клавиатуру с «Настроить
+//     профиль» (юзер уже считается привязанным).
+//  4. users.Create(FirstName, normalizedPhone). UNIQUE-конфликт по phone
+//     различается через ErrPhoneTaken.
+//  5. telegramUsers.SetUserIDByTelegramUserID — проставляем связь.
+//  6. Ответ «Спасибо! Номер привязан.» с reply-keyboard «Настроить профиль».
 //
 // Все ветки пишут message_out при успешной отправке ответа. Транзакция
 // между шагами 4 и 5 не используется — если 5 упадёт, у нас останется
 // users без связи; на следующем /start пользователь снова увидит кнопку,
 // и шаг 4 упадёт с ErrPhoneTaken (его номер уже в users). Логика
 // автоматического восстановления orphan'ов не предусмотрена сейчас.
-func (t *TelegramBot) handleContact(ctx context.Context, b *bot.Bot, update *models.Update) {
+func (t *TelegramBot) handleContact(ctx context.Context, b *bot.Bot, update *tgmodels.Update) {
 	if update.Message == nil || update.Message.From == nil || update.Message.Contact == nil {
 		return
 	}
 
-	var from *models.User = update.Message.From
+	var from *tgmodels.User = update.Message.From
 	var chatID int64 = update.Message.Chat.ID
-	var contact *models.Contact = update.Message.Contact
-	var inMessageID int64 = int64(update.Message.ID)
+	var contact *tgmodels.Contact = update.Message.Contact
+	var messageID int64 = int64(update.Message.ID)
 
 	t.clearPendingInput(from.ID)
 
@@ -45,7 +45,7 @@ func (t *TelegramBot) handleContact(ctx context.Context, b *bot.Bot, update *mod
 	t.LogTelegramEvent(ctx, from, telegramEventPayload{
 		Event:             eventContactIn,
 		ChatID:            chatID,
-		TelegramMessageID: inMessageID,
+		TelegramMessageID: messageID,
 		Text:              contact.PhoneNumber,
 	})
 
@@ -84,7 +84,7 @@ func (t *TelegramBot) handleContact(ctx context.Context, b *bot.Bot, update *mod
 	newUserID, err := t.users.Create(ctx, from.FirstName, normalizedPhone)
 	if err != nil {
 		if errors.Is(err, usersRepo.ErrPhoneTaken) {
-			t.sendContactReply(ctx, b, from, chatID, "⚠️ Этот номер уже привязан к другому аккаунту.", models.ReplyKeyboardRemove{RemoveKeyboard: true})
+			t.sendContactReply(ctx, b, from, chatID, "⚠️ Этот номер уже привязан к другому аккаунту.", tgmodels.ReplyKeyboardRemove{RemoveKeyboard: true})
 
 			return
 		}
@@ -125,9 +125,9 @@ func (t *TelegramBot) handleContact(ctx context.Context, b *bot.Bot, update *mod
 // sendContactReply шлёт ответ на contact_in и пишет message_out в журнал
 // при успехе. replyMarkup — произвольная клавиатура: nil (оставить
 // текущую — например, request_contact для повторной попытки),
-// models.ReplyKeyboardRemove (снять висящую) или
+// tgmodels.ReplyKeyboardRemove (снять висящую) или
 // profileSettingsKeyboard() (поставить «Настроить профиль» после привязки).
-func (t *TelegramBot) sendContactReply(ctx context.Context, b *bot.Bot, from *models.User, chatID int64, text string, replyMarkup any) {
+func (t *TelegramBot) sendContactReply(ctx context.Context, b *bot.Bot, from *tgmodels.User, chatID int64, text string, replyMarkup any) {
 	msg, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID:      chatID,
 		Text:        text,
@@ -146,4 +146,3 @@ func (t *TelegramBot) sendContactReply(ctx context.Context, b *bot.Bot, from *mo
 		Text:              text,
 	})
 }
-

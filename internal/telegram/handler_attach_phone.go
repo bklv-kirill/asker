@@ -4,25 +4,25 @@ import (
 	"context"
 
 	"github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
+	tgmodels "github.com/go-telegram/bot/models"
 )
 
 // handleAttachPhone — обработчик нажатия inline-кнопки «Привязать номер»
 // (callback_data = attachPhoneCallbackData). Шаги:
-//   1) AnswerCallbackQuery — обязателен, иначе у юзера на кнопке висит
-//      спиннер до таймаута TG.
-//   2) EditMessageReplyMarkup с пустой клавиатурой — убирает inline-кнопку
-//      из исходного сообщения, чтобы её нельзя было нажать повторно.
-//   3) Отправка нового сообщения с reply-keyboard, в которой одна кнопка
-//      request_contact — TG нарисует юзеру «Поделиться номером».
-//   4) Журнал: callback_in (нажатие) и message_out (ответ бота).
-func (t *TelegramBot) handleAttachPhone(ctx context.Context, b *bot.Bot, update *models.Update) {
+//  1. AnswerCallbackQuery — обязателен, иначе у юзера на кнопке висит
+//     спиннер до таймаута TG.
+//  2. EditMessageReplyMarkup с пустой клавиатурой — убирает inline-кнопку
+//     из исходного сообщения, чтобы её нельзя было нажать повторно.
+//  3. Отправка нового сообщения с reply-keyboard, в которой одна кнопка
+//     request_contact — TG нарисует юзеру «Поделиться номером».
+//  4. Журнал: callback_in (нажатие) и message_out (ответ бота).
+func (t *TelegramBot) handleAttachPhone(ctx context.Context, b *bot.Bot, update *tgmodels.Update) {
 	if update.CallbackQuery == nil {
 		return
 	}
 
-	var query *models.CallbackQuery = update.CallbackQuery
-	var from *models.User = &query.From
+	var query *tgmodels.CallbackQuery = update.CallbackQuery
+	var from *tgmodels.User = &query.From
 
 	t.clearPendingInput(from.ID)
 
@@ -32,11 +32,11 @@ func (t *TelegramBot) handleAttachPhone(ctx context.Context, b *bot.Bot, update 
 	// либо «недоступным» (InaccessibleMessage) — для нашего сценария это
 	// всегда обычный Message, так как кнопку шлёт сам бот.
 	var chatID int64
-	var sourceMessageID int
+	var messageID int
 
 	if query.Message.Message != nil {
 		chatID = query.Message.Message.Chat.ID
-		sourceMessageID = query.Message.Message.ID
+		messageID = query.Message.Message.ID
 	} else {
 		t.logger.Error("attach_phone callback without accessible message", "telegram_user_id", from.ID)
 
@@ -48,7 +48,7 @@ func (t *TelegramBot) handleAttachPhone(ctx context.Context, b *bot.Bot, update 
 	t.LogTelegramEvent(ctx, from, telegramEventPayload{
 		Event:             eventCallbackIn,
 		ChatID:            chatID,
-		TelegramMessageID: int64(sourceMessageID),
+		TelegramMessageID: int64(messageID),
 		Text:              attachPhoneCallbackData,
 	})
 
@@ -66,19 +66,19 @@ func (t *TelegramBot) handleAttachPhone(ctx context.Context, b *bot.Bot, update 
 	// и т.п.) — логируем и идём дальше, для UX это не критично.
 	_, err = b.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
 		ChatID:      chatID,
-		MessageID:   sourceMessageID,
-		ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{}},
+		MessageID:   messageID,
+		ReplyMarkup: tgmodels.InlineKeyboardMarkup{InlineKeyboard: [][]tgmodels.InlineKeyboardButton{}},
 	})
 	if err != nil {
-		t.logger.Error("edit attach_phone source message", "err", err, "chat_id", chatID, "message_id", sourceMessageID)
+		t.logger.Error("edit attach_phone message", "err", err, "chat_id", chatID, "message_id", messageID)
 	}
 
 	var replyText string = "📱 Нажми кнопку ниже, чтобы поделиться номером."
 	msg, err := b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: chatID,
 		Text:   replyText,
-		ReplyMarkup: models.ReplyKeyboardMarkup{
-			Keyboard: [][]models.KeyboardButton{
+		ReplyMarkup: tgmodels.ReplyKeyboardMarkup{
+			Keyboard: [][]tgmodels.KeyboardButton{
 				{
 					{Text: "📱 Поделиться номером", RequestContact: true},
 				},
