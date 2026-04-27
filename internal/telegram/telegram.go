@@ -26,25 +26,24 @@ import (
 	telegramUsersRepo "github.com/bklv-kirill/asker/internal/repository/telegram_users"
 	usersRepo "github.com/bklv-kirill/asker/internal/repository/users"
 	"github.com/bklv-kirill/asker/internal/services/ai"
+	"github.com/bklv-kirill/asker/internal/services/stt"
 )
 
 var ErrInitBot = errors.New("telegram: init bot")
 
 // Типы событий журнала telegram_events. Команда логируется одним событием
 // типа eventCommandIn (а не парой command_in + message_in). Для contact_in
-// в поле Text payload'а пишется сырой Contact.PhoneNumber от TG.
+// в поле Text payload'а пишется сырой Contact.PhoneNumber от TG. Для voice_in
+// в Text — расшифровка от STT-провайдера; событие пишется только при
+// успешной транскрибации (см. handler_voice.go).
 const (
 	eventCommandIn  = "command_in"
 	eventMessageIn  = "message_in"
 	eventMessageOut = "message_out"
 	eventCallbackIn = "callback_in"
 	eventContactIn  = "contact_in"
+	eventVoiceIn    = "voice_in"
 )
-
-// attachPhoneCallbackData — значение callback_data для inline-кнопки
-// «Привязать номер». При нажатии TG присылает CallbackQuery с этим data —
-// ловим через RegisterHandler(HandlerTypeCallbackQueryData, MatchTypeExact).
-const attachPhoneCallbackData = "attach_phone"
 
 // setupProfileButtonText / myProfileButtonText — подписи reply-кнопок
 // клавиатуры профиля (показывается уже-привязанным юзерам). Эти же значения
@@ -55,6 +54,11 @@ const (
 	setupProfileButtonText = "⚙️ Настроить профиль"
 	myProfileButtonText    = "👤 Мой профиль"
 )
+
+// attachPhoneCallbackData — значение callback_data для inline-кнопки
+// «Привязать номер». При нажатии TG присылает CallbackQuery с этим data —
+// ловим через RegisterHandler(HandlerTypeCallbackQueryData, MatchTypeExact).
+const attachPhoneCallbackData = "attach_phone"
 
 // callback_data inline-кнопок меню «Настроить профиль». Каждая
 // регистрируется отдельным RegisterHandler с MatchTypeExact: gender
@@ -115,6 +119,14 @@ type TelegramBot struct {
 	chatMessages   chatMessagesRepo.Repository
 
 	llm ai.LLM
+	stt stt.STT
+
+	// sttMaxDurationSec — лимит длительности голосового сообщения (в
+	// секундах), длиннее которого STT-провайдер не вызывается: бот отвечает
+	// просьбой сократить или написать текстом. Берётся из STT_MAX_DURATION_SEC,
+	// инжектится конструктором как обычное доменное значение (внутренние
+	// пакеты не зависят от *config.Config).
+	sttMaxDurationSec int
 
 	// pendingInput — in-memory state «жду текстовый ответ от юзера X
 	// на сценарий Y». Ключ — telegram_user_id (from.ID), значение —
@@ -138,6 +150,9 @@ func NewTelegramBot(
 	chatMessages chatMessagesRepo.Repository,
 
 	llm ai.LLM,
+	speechToText stt.STT,
+
+	sttMaxDurationSec int,
 ) *TelegramBot {
 	return &TelegramBot{
 		token:   token,
@@ -151,6 +166,9 @@ func NewTelegramBot(
 		chatMessages:   chatMessages,
 
 		llm: llm,
+		stt: speechToText,
+
+		sttMaxDurationSec: sttMaxDurationSec,
 
 		pendingInput: make(map[int64]string),
 	}
@@ -212,6 +230,8 @@ func (t *TelegramBot) Start(ctx context.Context) error {
 
 	b.RegisterHandlerMatchFunc(matchMessageContact, t.handleContact)
 
+	b.RegisterHandlerMatchFunc(matchMessageVoice, t.handleVoice)
+
 	b.Start(ctx)
 
 	return nil
@@ -223,6 +243,15 @@ func (t *TelegramBot) Start(ctx context.Context) error {
 // сработает — RegisterHandlerMatchFunc проверяется раньше дефолтного.
 func matchMessageContact(update *tgmodels.Update) bool {
 	return update.Message != nil && update.Message.Contact != nil
+}
+
+// matchMessageVoice срабатывает на любое сообщение с голосовой записью
+// (Telegram voice — записанное в самом клиенте, MIME audio/ogg, кодек
+// opus). Audio-файлы (загруженные из галереи), video/video_note и
+// прочие медиа намеренно НЕ ловим — это отдельные сценарии, и точка
+// принятия решения должна быть явной.
+func matchMessageVoice(update *tgmodels.Update) bool {
+	return update.Message != nil && update.Message.Voice != nil
 }
 
 // matchPendingInput срабатывает на любое текстовое сообщение от юзера,
@@ -334,6 +363,19 @@ func profileSettingsKeyboard() tgmodels.ReplyKeyboardMarkup {
 		},
 		IsPersistent:   true,
 		ResizeKeyboard: true,
+	}
+}
+
+// attachPhoneInlineMarkup собирает inline-клавиатуру с одной кнопкой
+// «Привязать номер». При нажатии TG присылает CallbackQuery с
+// data = attachPhoneCallbackData — его ловит handleAttachPhone.
+func attachPhoneInlineMarkup() tgmodels.InlineKeyboardMarkup {
+	return tgmodels.InlineKeyboardMarkup{
+		InlineKeyboard: [][]tgmodels.InlineKeyboardButton{
+			{
+				{Text: "📱 Привязать номер", CallbackData: attachPhoneCallbackData},
+			},
+		},
 	}
 }
 

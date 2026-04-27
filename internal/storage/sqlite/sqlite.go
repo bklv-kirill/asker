@@ -6,7 +6,6 @@ package sqlite
 import (
 	"database/sql"
 	"fmt"
-	"log/slog"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -24,7 +23,7 @@ import (
 // `db.Exec("PRAGMA foreign_keys = ON")` после Open: PRAGMA в SQLite живёт
 // на уровне соединения, а database/sql пулит соединения — Exec затронет
 // только одно случайное.
-func New(path string, logger *slog.Logger) *sql.DB {
+func New(path string) *sql.DB {
 	var dsn string = path + "?_foreign_keys=on"
 
 	db, err := sql.Open("sqlite3", dsn)
@@ -37,8 +36,6 @@ func New(path string, logger *slog.Logger) *sql.DB {
 		_ = db.Close()
 		panic(fmt.Errorf("sqlite: ping %s: %w", path, err))
 	}
-
-	logger.Info("sqlite opened", "path", path)
 
 	return db
 }

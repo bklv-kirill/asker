@@ -10,17 +10,17 @@ import (
 )
 
 type Config struct {
-	AppName       string `mapstructure:"APP_NAME"`
-	BotName       string `mapstructure:"BOT_NAME"`
+	AppName          string `mapstructure:"APP_NAME"`
+	BotName          string `mapstructure:"BOT_NAME"`
 	TelegramBotToken string `mapstructure:"TELEGRAM_BOT_TOKEN"`
-	DBPath        string `mapstructure:"DB_PATH"`
-
-	// AIAPIKey — ключ доступа к LLM-провайдеру. Не логировать.
-	AIAPIKey string `mapstructure:"AI_API_KEY"`
+	DBPath           string `mapstructure:"DB_PATH"`
 
 	// AIProvider — идентификатор реализации llm.Client ("anthropic", "openai",
 	// "fake" и т.п.). Сборка конкретного клиента по этой строке — в main.go.
 	AIProvider string `mapstructure:"AI_PROVIDER"`
+
+	// AIAPIKey — ключ доступа к LLM-провайдеру. Не логировать.
+	AIAPIKey string `mapstructure:"AI_API_KEY"`
 
 	// AIModel — имя модели у выбранного провайдера (напр. "claude-opus-4-7").
 	AIModel string `mapstructure:"AI_MODEL"`
@@ -33,6 +33,28 @@ type Config struct {
 	// AITimeoutSec — таймаут одного запроса к LLM в секундах. Используется
 	// для context.WithTimeout в Telegram-хендлере перед вызовом Answer.
 	AITimeoutSec int `mapstructure:"AI_TIMEOUT_SEC"`
+
+	// STTProvider — идентификатор реализации stt.STT ("groq" и т.п.).
+	// Сборка конкретного клиента по этой строке — в фабрике
+	// internal/services/stt/factory.
+	STTProvider string `mapstructure:"STT_PROVIDER"`
+
+	// STTAPIKey — ключ доступа к STT-провайдеру (распознавание голосовых).
+	// Не логировать.
+	STTAPIKey string `mapstructure:"STT_API_KEY"`
+
+	// STTModel — имя модели у STT-провайдера (напр. "whisper-large-v3-turbo"
+	// для Groq).
+	STTModel string `mapstructure:"STT_MODEL"`
+
+	// STTTimeoutSec — таймаут одного запроса к STT-провайдеру в секундах.
+	// Используется для context.WithTimeout в Telegram-хендлере голосовых.
+	STTTimeoutSec int `mapstructure:"STT_TIMEOUT_SEC"`
+
+	// STTMaxDurationSec — максимальная длительность принимаемого голосового
+	// сообщения (в секундах). Длиннее — отказываем пользователю с просьбой
+	// сократить или написать текстом, в STT не отправляем.
+	STTMaxDurationSec int `mapstructure:"STT_MAX_DURATION_SEC"`
 }
 
 // Load читает .env (если существует) и переменные окружения, собирает Config.
@@ -53,8 +75,8 @@ func Load() *Config {
 	// которых нет в .env — без него AutomaticEnv срабатывает только для Get*.
 	for _, key := range []string{
 		"APP_NAME", "BOT_NAME", "TELEGRAM_BOT_TOKEN", "DB_PATH",
-		"AI_PROVIDER", "AI_MODEL", "AI_API_KEY",
-		"AI_SYSTEM_PROMPT_PATH", "AI_TIMEOUT_SEC",
+		"AI_PROVIDER", "AI_API_KEY", "AI_MODEL", "AI_SYSTEM_PROMPT_PATH", "AI_TIMEOUT_SEC",
+		"STT_PROVIDER", "STT_API_KEY", "STT_MODEL", "STT_TIMEOUT_SEC", "STT_MAX_DURATION_SEC",
 	} {
 		err = v.BindEnv(key)
 		if err != nil {
@@ -74,10 +96,16 @@ func Load() *Config {
 	requireNonEmpty("DB_PATH", cfg.DBPath)
 
 	requireNonEmpty("AI_PROVIDER", cfg.AIProvider)
-	requireNonEmpty("AI_MODEL", cfg.AIModel)
 	requireNonEmpty("AI_API_KEY", cfg.AIAPIKey)
+	requireNonEmpty("AI_MODEL", cfg.AIModel)
 	requireNonEmpty("AI_SYSTEM_PROMPT_PATH", cfg.AISystemPromptPath)
 	requirePositive("AI_TIMEOUT_SEC", cfg.AITimeoutSec)
+
+	requireNonEmpty("STT_PROVIDER", cfg.STTProvider)
+	requireNonEmpty("STT_API_KEY", cfg.STTAPIKey)
+	requireNonEmpty("STT_MODEL", cfg.STTModel)
+	requirePositive("STT_TIMEOUT_SEC", cfg.STTTimeoutSec)
+	requirePositive("STT_MAX_DURATION_SEC", cfg.STTMaxDurationSec)
 
 	return &cfg
 }

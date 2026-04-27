@@ -16,6 +16,8 @@ import (
 	usersRepo "github.com/bklv-kirill/asker/internal/repository/users"
 	"github.com/bklv-kirill/asker/internal/services/ai"
 	aiFactory "github.com/bklv-kirill/asker/internal/services/ai/factory"
+	"github.com/bklv-kirill/asker/internal/services/stt"
+	sttFactory "github.com/bklv-kirill/asker/internal/services/stt/factory"
 	"github.com/bklv-kirill/asker/internal/storage/sqlite"
 	"github.com/bklv-kirill/asker/internal/telegram"
 )
@@ -31,27 +33,33 @@ func main() {
 
 	logger.Info("starting", "app", cfg.AppName, "bot", cfg.BotName)
 
-	var db *sql.DB = sqlite.New(cfg.DBPath, logger)
+	var db *sql.DB = sqlite.New(cfg.DBPath)
 	defer func() {
 		var err error = db.Close()
 		if err != nil {
 			logger.Error("sqlite close", "err", err)
 		}
 	}()
+	logger.Info("sqlite opened", "path", cfg.DBPath)
 
 	var users usersRepo.Repository = usersRepo.NewUsersSQLiteRepo(db)
 	var telegramUsers telegramUsersRepo.Repository = telegramUsersRepo.NewTelegramUsersSQLiteRepo(db)
 	var telegramEvents telegramEventsRepo.Repository = telegramEventsRepo.NewTelegramEventsSQLiteRepo(db)
 	var chatMessages chatMessagesRepo.Repository = chatMessagesRepo.NewChatMessagesSQLiteRepo(db)
 
-	var aiTimeout time.Duration = time.Duration(cfg.AITimeoutSec) * time.Second
-
 	var llm ai.LLM = aiFactory.NewLLM(
 		cfg.AIProvider,
 		cfg.AIAPIKey,
 		cfg.AIModel,
 		cfg.AISystemPromptPath,
-		aiTimeout,
+		time.Duration(cfg.AITimeoutSec)*time.Second,
+	)
+
+	var speechToText stt.STT = sttFactory.NewSTT(
+		cfg.STTProvider,
+		cfg.STTAPIKey,
+		cfg.STTModel,
+		time.Duration(cfg.STTTimeoutSec)*time.Second,
 	)
 
 	var tg *telegram.TelegramBot = telegram.NewTelegramBot(
@@ -66,6 +74,9 @@ func main() {
 		chatMessages,
 
 		llm,
+		speechToText,
+
+		cfg.STTMaxDurationSec,
 	)
 
 	var err error = tg.Start(ctx)

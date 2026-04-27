@@ -49,19 +49,8 @@ const typingRefreshInterval = 4 * time.Second
 //     Ассистент работает только для пользователей с привязанным номером
 //     (запись в users появляется только после контакта; chat_messages
 //     завязан на users.id).
-//  4. История диалога (chat_messages.GetLast) ДО записи текущего вопроса —
-//     вариант A контракта: история без current question.
-//  5. Запись текущего вопроса (chat_messages.Create, role=user).
-//  6. Сборка prompt'а (история + вопрос) и вызов llm.Prompt — таймаут
-//     соблюдает реализация провайдера (внутри ставит context.WithTimeout
-//     по AITimeoutSec).
-//  7. Запись ответа (chat_messages.Create, role=assistant). Best-effort:
-//     если запись упала — отдаём ответ юзеру и логируем сбой; на следующем
-//     запросе history будет короче, но UX не блокируется.
-//  8. Чанкованная отправка (splitForTelegram режет >4096 рун по \n / ". "
-//     в окне [3500..4096]); message_out пишется ОДИН раз с id последнего
-//     отправленного сообщения и полным текстом — концептуально это один
-//     логический ответ ассистента, даже если технически пришло несколько частей.
+//  4. processAssistantTurn — общий хвост (профиль/история/LLM/ответ);
+//     переиспользуется handler_voice.go после успешной транскрибации.
 func (t *TelegramBot) handleAssistant(ctx context.Context, b *bot.Bot, update *tgmodels.Update) {
 	if update.Message == nil || update.Message.From == nil || update.Message.Text == "" {
 		return
@@ -107,8 +96,30 @@ func (t *TelegramBot) handleAssistant(ctx context.Context, b *bot.Bot, update *t
 		return
 	}
 
-	var userID int64 = *tgUser.UserID
+	t.processAssistantTurn(ctx, b, from, chatID, *tgUser.UserID, text)
+}
 
+// processAssistantTurn — общий ассистент-флоу для уже привязанного пользователя.
+// Используется handleAssistant (текст) и handleVoice (после успешной транскрибации).
+//
+// Шаги:
+//  1. Загрузка профиля (users.GetByID) — нужен для buildAssistantPrompt.
+//  2. История диалога (chat_messages.GetLast) ДО записи текущего вопроса —
+//     вариант A контракта: история без current question.
+//  3. Запись текущего вопроса (chat_messages.Create, role=user).
+//  4. Сборка prompt'а (профиль + история + вопрос) и вызов llm.Prompt —
+//     таймаут уважает реализация провайдера (context.WithTimeout по AI_TIMEOUT_SEC).
+//  5. Запись ответа (chat_messages.Create, role=assistant). Best-effort:
+//     если запись упала — отдаём ответ юзеру и логируем сбой; на следующем
+//     запросе history будет короче, но UX не блокируется.
+//  6. Чанкованная отправка (splitForTelegram режет >4096 рун по \n / ". "
+//     в окне [3500..4096]); message_out пишется ОДИН раз с id последнего
+//     отправленного сообщения и полным текстом — концептуально это один
+//     логический ответ ассистента, даже если технически пришло несколько частей.
+//
+// Все ошибки внутри логируются и сами шлют юзеру текст-фолбэк; наружу не
+// пробрасываются.
+func (t *TelegramBot) processAssistantTurn(ctx context.Context, b *bot.Bot, from *tgmodels.User, chatID, userID int64, text string) {
 	user, err := t.users.GetByID(ctx, userID)
 	if err != nil {
 		if errors.Is(err, usersRepo.ErrNotFound) {
@@ -149,7 +160,7 @@ func (t *TelegramBot) handleAssistant(ctx context.Context, b *bot.Bot, update *t
 	var stopTyping context.CancelFunc = t.startTyping(ctx, b, chatID)
 	defer stopTyping()
 
-	llmAnswer, err := t.llm.Prompt(ctx, prompt)
+	answer, err := t.llm.Prompt(ctx, prompt)
 	stopTyping()
 	if err != nil {
 		t.logger.Error("llm prompt", "err", err, "user_id", userID)
@@ -161,7 +172,7 @@ func (t *TelegramBot) handleAssistant(ctx context.Context, b *bot.Bot, update *t
 	_, err = t.chatMessages.Create(ctx, models.ChatMessageCreate{
 		UserID:  userID,
 		Role:    models.ChatMessageRoleAssistant,
-		Content: llmAnswer,
+		Content: answer,
 	})
 	if err != nil {
 		// Ответ всё равно отдаём — потеря записи в истории не должна
@@ -169,7 +180,7 @@ func (t *TelegramBot) handleAssistant(ctx context.Context, b *bot.Bot, update *t
 		t.logger.Error("chat_messages create assistant", "err", err, "user_id", userID)
 	}
 
-	t.sendAssistantChunked(ctx, b, from, chatID, llmAnswer)
+	t.sendAssistantChunked(ctx, b, from, chatID, answer)
 }
 
 // sendAssistantText — короткий ответ (служебные сообщения, ошибки,
@@ -266,10 +277,10 @@ func (t *TelegramBot) startTyping(ctx context.Context, b *bot.Bot, chatID int64)
 
 		for {
 			select {
-				case <-typingCtx.Done():
-					return
-				case <-ticker.C:
-					t.sendTypingAction(typingCtx, b, chatID)
+			case <-typingCtx.Done():
+				return
+			case <-ticker.C:
+				t.sendTypingAction(typingCtx, b, chatID)
 			}
 		}
 	}()
@@ -337,10 +348,10 @@ func buildAssistantPrompt(user models.User, history []models.ChatMessage, questi
 		for _, m := range history {
 			var role string
 			switch m.Role {
-				case models.ChatMessageRoleUser:
-					role = "Пользователь"
-				case models.ChatMessageRoleAssistant:
-					role = "Ассистент"
+			case models.ChatMessageRoleUser:
+				role = "Пользователь"
+			case models.ChatMessageRoleAssistant:
+				role = "Ассистент"
 			}
 
 			b.WriteString(role)
