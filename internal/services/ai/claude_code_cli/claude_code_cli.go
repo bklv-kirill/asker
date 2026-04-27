@@ -36,6 +36,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"syscall"
 	"time"
 
 	"github.com/bklv-kirill/asker/internal/services/ai"
@@ -128,6 +129,16 @@ func (c *claudeCodeCLI) Prompt(ctx context.Context, prompt ai.Prompt) (string, e
 
 	var cmd *exec.Cmd = exec.CommandContext(reqCtx, "claude", args...)
 	cmd.Stdin = bytes.NewReader([]byte(prompt))
+
+	// Setpgid: true изолирует подпроцесс claude в собственной process group.
+	// Без этого signal-каскад от родительского pgroup (air шлёт SIGINT по
+	// process group Go-бинарника при graceful shutdown) задевает и claude,
+	// он валится с is_error=true / error_during_execution, и юзер видит
+	// «не получилось получить ответ» вместо реального LLM-ответа. С Setpgid
+	// сигнал от air не достаёт ребёнка; отмена по reqCtx (derived от
+	// processCtx, переживающего SIGINT) продолжает работать через
+	// exec.CommandContext → cmd.Process.Kill() — оно ходит по PID, не pgroup.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
