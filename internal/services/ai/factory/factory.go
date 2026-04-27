@@ -38,7 +38,7 @@ func NewLLM(provider, apiKey, model, systemPromptPath string, timeout time.Durat
 			return openrouter.NewOpenRouter(apiKey, model, ai.SystemPrompt(systemPrompt), timeout)
 
 		case ProviderClaudeCodeCLI:
-			return claudeCodeCLI.NewClaudeCodeCLI()
+			return claudeCodeCLI.NewClaudeCodeCLI(model, ai.SystemPrompt(systemPrompt), timeout)
 
 		default:
 			panic(fmt.Errorf("ai: unknown provider %q", provider))
